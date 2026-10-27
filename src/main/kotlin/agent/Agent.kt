@@ -12,18 +12,6 @@ import kotlinx.serialization.json.*
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
-data class ToolContext(
-    val parameters: Map<String, JsonElement>,
-    val agent: Agent,
-)
-
-fun ToolContext.getParameter(name: String): JsonElement? = parameters[name]
-
-data class Tool(
-    val meta: ToolDefinition,
-    val execute: suspend (ToolContext) -> List<ContentBlock>,
-)
-
 sealed interface AgentEvent {
     /** 流式文本，临时的；UI 可以边收边显示 */
     data class AssistantDelta(val text: String) : AgentEvent
@@ -71,9 +59,11 @@ sealed interface Message {
         }
     }
 
-    class ImageMessage(): Message {
+    class ImageMessage(
+        val imageUrl: String
+    ): Message {
         override fun packToContextBlock(): ContentBlock {
-            TODO("Not yet implemented")
+            return ContentBlock(ContentType.IMAGE, imageUrl)
         }
     }
 }
@@ -117,7 +107,7 @@ class Agent(
     val events: SharedFlow<AgentEvent> = _events.asSharedFlow()
 
     /**
-     * Almost certainly, this should be called only in IDLE phase when all previous context is cleared, and the tool call-tool result pair should not be broken.
+     * The tool call-tool result pair should not be broken, and this MUST NOT be called before the tool result is added to context.
      */
     private fun appendMessage(msg: Message) {
         _events.tryEmit(AgentEvent.AssistantReceivedMessage(msg))
@@ -154,7 +144,7 @@ class Agent(
 
                     Phase.MODEL -> {
                         if (++turns > maxTurns) {
-                            // todo: Add a system message telling the agent what happened
+                            appendMessage(Message.TextMessage("The maximum turns for a single round has been reached.", "system"))
                             _events.emit(AgentEvent.RoundStopped(FinishReason.MAX_ROUND_REACHED))
                             phase = Phase.IDLE
                             continue
@@ -182,7 +172,7 @@ class Agent(
                                     }
 
                                     FinishReason.UNKNOWN_ERROR -> {
-                                        // todo: Add a system message telling the agent what happened
+                                        appendMessage(Message.TextMessage("Error occurred while requesting LLM: "+reply.exception?.message, "system"))
                                         _events.emit(AgentEvent.RoundStopped(reply.finishReason, reply.exception))
                                         phase = Phase.IDLE
                                     }
