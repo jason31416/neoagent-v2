@@ -74,6 +74,8 @@ enum class Phase {
     TOOL
 }
 
+// todo: compaction
+
 /**
  * One agentic loop bound to one conversation.
  *
@@ -165,14 +167,14 @@ class Agent(
                         select {
                             request.onAwait { reply ->
                                 when (reply.finishReason) {
-                                    FinishReason.CONTENT_FILTER -> {
-                                        // todo: Process this extreme case. Likely context is dirty.
+                                    FinishReason.CONTENT_FILTER, FinishReason.REQUEST_TOO_LARGE -> {
+                                        // todo: Process this extreme case. Likely context is unusable.
                                         _events.emit(AgentEvent.RoundStopped(reply.finishReason))
                                         phase = Phase.IDLE
                                     }
 
                                     FinishReason.UNKNOWN_ERROR -> {
-                                        appendMessage(Message.TextMessage("Error occurred while requesting LLM: "+reply.exception?.message, "system"))
+                                        appendMessage(Message.TextMessage("Assistant failed: error occurred while requesting LLM: "+reply.exception?.message, "system"))
                                         _events.emit(AgentEvent.RoundStopped(reply.finishReason, reply.exception))
                                         phase = Phase.IDLE
                                     }

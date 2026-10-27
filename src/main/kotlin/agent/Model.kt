@@ -1,7 +1,10 @@
 package cn.jason31416.agent
 
+import cn.jason31416.providers.ModelProvider
+import cn.jason31416.providers.OpenaiCompatibleModelProvider
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.flow.Flow
+import kotlin.reflect.KType
 
 enum class Role {
     SYSTEM,
@@ -51,6 +54,7 @@ data class ContextEntry(
     val content: MutableList<ContentBlock>,
     val toolCalls: List<ToolCall> = emptyList(), // role=assistant only
     val toolCallID: String?=null, // role=tool only
+    val reasoningContent: String?=null, // role=assistant only
 )
 
 // Avoid using any type not defined here
@@ -90,6 +94,7 @@ enum class FinishReason {
     TOOL_CALLS,
     CONTENT_FILTER,
     UNKNOWN_ERROR,
+    REQUEST_TOO_LARGE,
     MAX_ROUND_REACHED, // This is not triggered by provider but rather Agent.kt's limit.
 }
 
@@ -98,16 +103,20 @@ sealed interface ModelEvent {
     data class Completed(val message: ContextEntry, val finishReason: FinishReason, val exception: Exception?) : ModelEvent
 }
 
+class ModelCapability(
+    val maxImage: Int=-1,
+    val contextLength: Int=1048576,
+) {
+    fun supportsImage() = maxImage > 0
+}
+
 /**
  * A general provider for LLM service, representing a single loaded model.
  */
-interface Model {
-    companion object {
-        val modelRegistry = hashMapOf<String, Model>()
-    }
-    val id: String
-    val displayName: String
-
+open class Model(val id: String,
+                 val displayName: String,
+                 val modelProvider: ModelProvider,
+                 val capabilities: ModelCapability) {
     /**
      * One round trip with the model. Returns the assistant's reply — the same [ContextEntry]
      * the loop appends to the conversation, so no DTO mapping is needed in between.
@@ -118,6 +127,6 @@ interface Model {
         context: List<ContextEntry>,
         tools: List<ToolDefinition>,
         effort: String?,
-        sessionID: String, // For opencode's protocol
-    ): Flow<ModelEvent>
+        sessionID: String,
+    ): Flow<ModelEvent> = modelProvider.requestModel(this, context,tools,effort,sessionID)
 }

@@ -31,6 +31,7 @@ class ToolRegistry {
             tools[tool.meta.name] = tool
         }
 
+        // todo: Support for lists?
         fun registerTool(toolFunction: KFunction<*>){
             val rt = toolFunction.returnType
             require(!rt.isMarkedNullable) { "Return type cannot be null" }
