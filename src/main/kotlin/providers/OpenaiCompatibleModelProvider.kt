@@ -230,10 +230,15 @@ open class OpenaiCompatibleModelProvider(
     protected open fun convertToolMessage(entry: ContextEntry): JsonObject = buildJsonObject {
         put("role", "tool")
         put("tool_call_id", entry.toolCallID ?: "")
-        put("content", entry.content.joinToString("\n") {
-            when (it.type) {
-                ContentType.TEXT -> it.content
-                ContentType.IMAGE -> "[image omitted]"
+        put("content", buildJsonArray {
+            entry.content.forEach { item ->
+                add(when (item.type) {
+                    ContentType.TEXT -> buildJsonObject {
+                        put("type", "text")
+                        put("text", item.content)
+                    }
+                    ContentType.IMAGE -> convertImage(item)
+                })
             }
         })
     }
@@ -294,8 +299,9 @@ open class OpenaiCompatibleModelProvider(
                 val data = parseSseData(iterator.next()) ?: continue
                 if (data == "[DONE]") break
 
-                consumeChunk(parseChunk(data), acc)?.let {
-                    collector.emit(ModelEvent.TextDelta(it))
+                consumeChunk(parseChunk(data), acc).let {
+                    if(it.first!=null||it.second!=null)
+                        collector.emit(ModelEvent.TextDelta(reasoningDelta=it.first, textDelta=it.second))
                 }
             }
         }
@@ -314,17 +320,18 @@ open class OpenaiCompatibleModelProvider(
      * 处理一个 SSE chunk。
      *
      * 返回本次新增的文本（没有文本就返回 null），供上层发 TextDelta。
+     * 前者为thinking的delta，后者为输出的delta
      * 子类可以在这里补充厂商字段的解析，然后调用 super。
      */
-    protected open fun consumeChunk(chunk: JsonObject, acc: AssistantAccumulator): String? {
+    protected open fun consumeChunk(chunk: JsonObject, acc: AssistantAccumulator): Pair<String?, String?> {
         (chunk["error"] as? JsonObject)?.let { error ->
             acc.error = IllegalStateException("Provider stream error: $error")
-            return null
+            return Pair(null, null)
         }
 
         val choice = (chunk["choices"] as? JsonArray)
             ?.firstOrNull() as? JsonObject
-            ?: return null
+            ?: return Pair(null, null)
 
         var textDelta: String? = null
 
@@ -346,7 +353,7 @@ open class OpenaiCompatibleModelProvider(
             ?.contentOrNull
             ?.let { acc.finishReason = it }
 
-        return textDelta
+        return Pair(null, textDelta)
     }
 
     private fun buildCompleted(acc: AssistantAccumulator): ModelEvent.Completed {

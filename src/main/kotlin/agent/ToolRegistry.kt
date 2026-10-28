@@ -1,7 +1,9 @@
 package cn.jason31416.agent
 
 import kotlinx.serialization.json.*
+import java.io.File
 import java.security.InvalidParameterException
+import java.util.Base64
 import kotlin.reflect.KFunction
 import kotlin.reflect.KParameter
 import kotlin.reflect.KType
@@ -25,7 +27,7 @@ annotation class Description(
 
 class ToolRegistry {
     companion object {
-        private val tools = HashMap<String, Tool>()
+        val tools = HashMap<String, Tool>()
 
         fun registerTool(tool: Tool) {
             tools[tool.meta.name] = tool
@@ -118,11 +120,15 @@ class ToolRegistry {
         }
 
         fun getTool(toolName: String): Tool? = tools[toolName]
+
+        fun getTools(toolNames: List<String>): Map<String, Tool> {
+            return tools.filter{ t -> t.key in toolNames }
+        }
+
+        fun allTools() = tools
     }
 }
 
-// 必须是顶层函数：kotlin-reflect 解析不了局部函数的引用（Kotlin 2.3 仍然会抛
-// KotlinReflectionInternalError），而 registerTool(::fn) 依赖 KFunction.returnType。
 @Description("A tool designed for testing. Calculates a+b. Will throw when b is 0 for testing.")
 internal fun addition_tool(
     @Description("The first number, must be an integer.") a: Int,
@@ -134,6 +140,44 @@ internal fun addition_tool(
     return listOf(ContentBlock(ContentType.TEXT, "<result>The result of the call is " + (a + b) + "</result>"))
 }
 
+@Description(
+    "Read anything from disk. png/jpg/jpeg/gif/webp are returned as images; " +
+            "everything else is returned as UTF-8 text." +
+            "When reading a directory, this tool will list the file names in it."
+)
+fun read(
+    @Description("Absolute path of the file/directory to read.") path: String,
+): List<ContentBlock> {
+    val file = File(path)
+    if(file.isDirectory){
+        return listOf(
+            ContentBlock(
+                ContentType.TEXT,
+                "Is a directory. All file/directories in `"+path+"`:\n"+
+                        file.listFiles().map { file -> file.name }.joinToString("\n")
+            )
+        )
+    }
+    val mime = when (file.extension.lowercase()) {
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        else -> null
+    }
+    return listOf(
+        if (mime == null) {
+            ContentBlock(ContentType.TEXT, file.readText())
+        } else {
+            ContentBlock(
+                ContentType.IMAGE,
+                "data:$mime;base64," + Base64.getEncoder().encodeToString(file.readBytes()),
+            )
+        }
+    )
+}
+
 fun registerTestingTools() {
     ToolRegistry.registerTool(::addition_tool)
+    ToolRegistry.registerTool(::read)
 }

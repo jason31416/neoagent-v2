@@ -2,6 +2,7 @@ package cn.jason31416
 
 import cn.jason31416.agent.Agent
 import cn.jason31416.agent.AgentEvent
+import cn.jason31416.agent.ContentType
 import cn.jason31416.agent.Message
 import cn.jason31416.agent.Model
 import cn.jason31416.agent.ModelCapability
@@ -86,9 +87,7 @@ private fun createAgent(apiKey: String, scope: CoroutineScope): Agent {
 
     // ToolRegistry 是个单例：注册进去之后只能按名字取，没有“列出全部”的接口。
     registerTestingTools()
-    val addition = ToolRegistry.getTool("addition_tool")
-        ?: error("addition_tool was not registered")
-    val tools = mapOf(addition.meta.name to addition)
+    val tools = ToolRegistry.allTools()
 
     return Agent(model = model, tools = tools, coroutineScope = scope)
 }
@@ -224,6 +223,12 @@ private fun submit(input: InputLine, console: ConsoleUi, agent: Agent) {
     console.prompt(input)
 }
 
+class ToggleStore {
+    companion object {
+        var toggleState = false
+    }
+}
+
 /**
  * [AgentEvent] -> 控制台文本。
  *
@@ -232,7 +237,11 @@ private fun submit(input: InputLine, console: ConsoleUi, agent: Agent) {
 private fun renderAgentEvent(console: ConsoleUi, event: AgentEvent) {
     when (event) {
         // 流式文本，来一个字写一个字。
-        is AgentEvent.AssistantDelta -> console.log(event.text)
+        is AgentEvent.AssistantDelta -> {
+            if(ToggleStore.toggleState) console.log("\n")
+            ToggleStore.toggleState = false
+            console.log(event.text)
+        }
 
         // 这一轮的 assistant 消息已经提交；如果有 tool call，在这里显示。
         is AgentEvent.AssistantReplied -> {
@@ -244,7 +253,10 @@ private fun renderAgentEvent(console: ConsoleUi, event: AgentEvent) {
 
         // 工具执行完，result 就是追加进 context 的那条消息。
         is AgentEvent.ToolFinished -> {
-            val result = event.result.content.joinToString(" ") { it.content }
+            val result = event.result.content.joinToString(" ") { when(it.type){
+                ContentType.IMAGE -> "[Image]"
+                ContentType.TEXT -> it.content
+            } }
             console.log("  ↳ $result (${event.durationMs}ms)\n", Ansi.GRAY)
         }
 
@@ -252,6 +264,11 @@ private fun renderAgentEvent(console: ConsoleUi, event: AgentEvent) {
             console.ensureNewline()
             event.error?.let { console.log("[error] ${it.message}\n", Ansi.RED) }
             console.log("[round stopped: ${event.finishReason}]\n", Ansi.DIM)
+        }
+
+        is AgentEvent.ReasoningDelta -> {
+            ToggleStore.toggleState = true
+            console.log(event.text, Ansi.DIM)
         }
 
         // 用户自己发的消息，不用回显（submit 里已经打过 "> ..." 了）。

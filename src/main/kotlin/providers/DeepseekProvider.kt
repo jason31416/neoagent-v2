@@ -68,17 +68,19 @@ open class DeepSeekProvider(
     override fun consumeChunk(
         chunk: JsonObject,
         acc: AssistantAccumulator,
-    ): String? {
+    ): Pair<String?, String?> {
         val delta = (chunk["choices"] as? JsonArray)
             ?.firstOrNull()
             ?.let { it as? JsonObject }
             ?.get("delta") as? JsonObject
 
-        (delta?.get("reasoning_content") as? JsonPrimitive)
+        val rdc = (delta?.get("reasoning_content") as? JsonPrimitive)
             ?.contentOrNull
-            ?.let(acc::appendReasoning)
+        if(rdc != null) {
+            acc.appendReasoning(rdc)
+        }
 
-        return super.consumeChunk(chunk, acc)
+        return Pair(rdc, super.consumeChunk(chunk, acc).second)
     }
 
     override fun applyEffort(body: JsonObjectBuilder, effort: String?) {

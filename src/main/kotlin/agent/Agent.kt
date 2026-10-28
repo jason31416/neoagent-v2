@@ -16,7 +16,10 @@ sealed interface AgentEvent {
     /** 流式文本，临时的；UI 可以边收边显示 */
     data class AssistantDelta(val text: String) : AgentEvent
 
-    /** 已提交的 assistant 消息（含 toolCalls）*/
+    /** 流式思考过程，临时的；UI 可以边收边显示 */
+    data class ReasoningDelta(val text: String) : AgentEvent
+
+    /** 已提交的 assistant 消息；ui最终显示应该以此为基准，包含思考过程，输出，以及工具调用*/
     data class AssistantReplied(val message: ContextEntry, val interrupted: Boolean=false) : AgentEvent
 
     /** agent收到消息（包括用户消息/系统提示/其他注入消息等）*/
@@ -152,15 +155,30 @@ class Agent(
                             continue
                         }
 
+                        // For interrupt recover
+                        val currentOutput: StringBuilder = StringBuilder()
+                        val currentReasoning: StringBuilder = StringBuilder()
+
                         val request = async {
                             model.request(context.toList(), tools.values.map { it.meta }, effort, currentSessionID)
                                 .onEach { e ->
                                     if (e is ModelEvent.TextDelta){
-                                        _events.tryEmit(
-                                            AgentEvent.AssistantDelta(
-                                                e.text
+                                        if(e.textDelta!=null) {
+                                            _events.tryEmit(
+                                                AgentEvent.AssistantDelta(
+                                                    e.textDelta
+                                                )
                                             )
-                                        )
+                                            currentOutput.append(e.textDelta)
+                                        }
+                                        if(e.reasoningDelta!=null) {
+                                            _events.tryEmit(
+                                                AgentEvent.ReasoningDelta(
+                                                    e.reasoningDelta
+                                                )
+                                            )
+                                            currentReasoning.append(e.reasoningDelta)
+                                        }
                                     }
                                 }
                                 .filterIsInstance<ModelEvent.Completed>()
@@ -198,6 +216,15 @@ class Agent(
                             }
                             inbox.onReceive { msg ->
                                 request.cancelAndJoin()
+                                if(currentOutput.isNotEmpty()) {
+                                    val assistantMsg = ContextEntry(
+                                        Role.ASSISTANT,
+                                        arrayListOf(ContentBlock(ContentType.TEXT, currentOutput.toString())),
+                                        reasoningContent=currentReasoning.toString().ifEmpty { null }
+                                    )
+                                    _events.emit(AgentEvent.AssistantReplied(assistantMsg, interrupted = true))
+                                    context += assistantMsg
+                                }
                                 appendMessage(msg)
                                 while (true) {
                                     val next = inbox.tryReceive().getOrNull() ?: break

@@ -99,7 +99,7 @@ enum class FinishReason {
 }
 
 sealed interface ModelEvent {
-    data class TextDelta(val text: String) : ModelEvent
+    data class TextDelta(val reasoningDelta: String?, val textDelta: String?) : ModelEvent
     data class Completed(val message: ContextEntry, val finishReason: FinishReason, val exception: Exception?) : ModelEvent
 }
 
