@@ -17,7 +17,7 @@ sealed interface AgentEvent {
     data class AssistantDelta(val text: String) : AgentEvent
 
     /** 已提交的 assistant 消息（含 toolCalls）*/
-    data class AssistantReplied(val message: ContextEntry) : AgentEvent
+    data class AssistantReplied(val message: ContextEntry, val interrupted: Boolean=false) : AgentEvent
 
     /** agent收到消息（包括用户消息/系统提示/其他注入消息等）*/
     data class AssistantReceivedMessage(val message: Message) : AgentEvent
@@ -151,14 +151,17 @@ class Agent(
                             phase = Phase.IDLE
                             continue
                         }
+
                         val request = async {
                             model.request(context.toList(), tools.values.map { it.meta }, effort, currentSessionID)
                                 .onEach { e ->
-                                    if (e is ModelEvent.TextDelta) _events.tryEmit(
-                                        AgentEvent.AssistantDelta(
-                                            e.text
+                                    if (e is ModelEvent.TextDelta){
+                                        _events.tryEmit(
+                                            AgentEvent.AssistantDelta(
+                                                e.text
+                                            )
                                         )
-                                    )
+                                    }
                                 }
                                 .filterIsInstance<ModelEvent.Completed>()
                                 .firstOrNull() ?: error("no Completed")

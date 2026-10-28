@@ -63,7 +63,7 @@ class ToolRegistry {
                 require(param.name!=null) {
                     "Parameter name cannot be null"
                 }
-                paramL.add(Parameter(paramType, param.name!!, desc, required=param.isOptional))
+                paramL.add(Parameter(paramType, param.name!!, desc, required=!param.isOptional))
             }
             var desc: String?=null;
             for(annotation in toolFunction.annotations){
@@ -97,8 +97,13 @@ class ToolRegistry {
                     }
                 }
 
-                @Suppress("UNCHECKED_CAST")
-                toolFunction.callSuspendBy(args) as List<ContentBlock>
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    toolFunction.callSuspendBy(args) as List<ContentBlock>
+                } catch (e: java.lang.reflect.InvocationTargetException) {
+                    // kotlin-reflect 不会拆掉这层包装，否则工具异常只会显示 "null"。
+                    throw e.targetException ?: e
+                }
             })
         }
 
@@ -116,12 +121,19 @@ class ToolRegistry {
     }
 }
 
-fun registerTestingTools() {
-    @Description("A tool designed for testing. Calculates a+b. Will throw when b is 0 for testing.")
-    fun addition_tool(@Description("The first number, must be an integer.") a: Int, @Description("The second number, must not be 0.") b: Double): List<ContentBlock> {
-        require(b!=0.0) {
-            "This is a testing throw message"
-        }
-        return listOf(ContentBlock(ContentType.TEXT, "<result>The result of the call is "+(a+b)+"</result>"))
+// 必须是顶层函数：kotlin-reflect 解析不了局部函数的引用（Kotlin 2.3 仍然会抛
+// KotlinReflectionInternalError），而 registerTool(::fn) 依赖 KFunction.returnType。
+@Description("A tool designed for testing. Calculates a+b. Will throw when b is 0 for testing.")
+internal fun addition_tool(
+    @Description("The first number, must be an integer.") a: Int,
+    @Description("The second number, must not be 0.") b: Double,
+): List<ContentBlock> {
+    require(b != 0.0) {
+        "This is a testing throw message"
     }
+    return listOf(ContentBlock(ContentType.TEXT, "<result>The result of the call is " + (a + b) + "</result>"))
+}
+
+fun registerTestingTools() {
+    ToolRegistry.registerTool(::addition_tool)
 }
