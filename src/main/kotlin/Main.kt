@@ -1,13 +1,13 @@
 package cn.jason31416
 
-import cn.jason31416.agent.Agent
-import cn.jason31416.agent.AgentEvent
-import cn.jason31416.agent.ContentType
-import cn.jason31416.agent.Message
-import cn.jason31416.agent.Model
-import cn.jason31416.agent.ModelCapability
-import cn.jason31416.agent.ToolRegistry
-import cn.jason31416.agent.registerTestingTools
+import cn.jason31416.framework.Agent
+import cn.jason31416.framework.AgentEvent
+import cn.jason31416.framework.ContentType
+import cn.jason31416.framework.Message
+import cn.jason31416.framework.Model
+import cn.jason31416.framework.ModelCapability
+import cn.jason31416.framework.ToolRegistry
+import cn.jason31416.framework.registerTestingTools
 import cn.jason31416.providers.DeepSeekProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -234,6 +234,11 @@ class ToggleStore {
     }
 }
 
+private fun summarizeText(str: String): String{
+    if(str.length<=110) return str
+    return str.substring(0, 50)+"..."+str.substring(str.length-51, str.length)
+}
+
 /**
  * [AgentEvent] -> 控制台文本。
  *
@@ -274,12 +279,18 @@ private fun renderAgentEvent(console: ConsoleUi, event: AgentEvent) {
                 ContentType.IMAGE -> "[Image]"
                 ContentType.TEXT -> it.content
             } }
-            console.log("  ↳ $result (${event.durationMs}ms)\n", Ansi.GRAY)
+            console.log("  ↳ ${summarizeText(result)} (${event.durationMs}ms)\n", Ansi.GRAY)
         }
 
         is AgentEvent.RoundStopped -> {
             console.ensureNewline()
-            event.error?.let { console.log("[error] ${it.message}\n", Ansi.RED) }
+            event.error?.let {
+                console.log("[error] ${it.localizedMessage}\n", Ansi.RED)
+                console.log(
+                    it.stackTraceToString().lineSequence().drop(1).take(12).joinToString("\n") + "\n",
+                    Ansi.RED,
+                )
+            }
             console.log("[round stopped: ${event.finishReason}]\n", Ansi.DIM)
         }
 

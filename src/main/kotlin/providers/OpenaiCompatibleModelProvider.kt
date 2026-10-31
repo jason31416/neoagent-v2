@@ -1,16 +1,16 @@
 package cn.jason31416.providers
 
-import cn.jason31416.agent.ContentBlock
-import cn.jason31416.agent.ContentType
-import cn.jason31416.agent.ContextEntry
-import cn.jason31416.agent.FinishReason
-import cn.jason31416.agent.Model
-import cn.jason31416.agent.ModelCapability
-import cn.jason31416.agent.ModelEvent
-import cn.jason31416.agent.Role
-import cn.jason31416.agent.TokenUsage
-import cn.jason31416.agent.ToolCall
-import cn.jason31416.agent.ToolDefinition
+import cn.jason31416.framework.ContentBlock
+import cn.jason31416.framework.ContentType
+import cn.jason31416.framework.ContextEntry
+import cn.jason31416.framework.FinishReason
+import cn.jason31416.framework.Model
+import cn.jason31416.framework.ModelCapability
+import cn.jason31416.framework.ModelEvent
+import cn.jason31416.framework.Role
+import cn.jason31416.framework.TokenUsage
+import cn.jason31416.framework.ToolCall
+import cn.jason31416.framework.ToolDefinition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive

@@ -10,8 +10,8 @@ class Config(val map: Map<String, Any>) {
             val configFile = File("config.yml")
             if(!configFile.exists()){
                 @Suppress("JAVA_CLASS_ON_COMPANION")
-                javaClass.classLoader.getResourceAsStream("config.yml")?.bufferedReader().use {
-                    configFile.printWriter().use { out -> out.println(configFile.readText()) }
+                javaClass.classLoader.getResourceAsStream("config.yml")?.bufferedReader()?.use {
+                    configFile.printWriter().use { out -> out.println(it.readText()) }
                 }
             }
             configTree = Config(Yaml().load(configFile.inputStream()))

@@ -1,4 +1,4 @@
-package cn.jason31416.agent
+package cn.jason31416.framework
 
 import cn.jason31416.Config
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +13,8 @@ import kotlinx.serialization.json.*
 import java.io.File
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
+
+//todo: Extract context to external: array list or database
 
 sealed interface AgentEvent {
     /** 流式文本，临时的；UI 可以边收边显示 */
@@ -204,7 +206,11 @@ class Agent(
             currentSessionID,
         )
             .filterIsInstance<ModelEvent.Completed>()
-            .firstOrNull() ?: error("no Completed");
+            .firstOrNull() ?: error("no Completed")
+
+        ret.exception?.let {
+            throw it
+        }
 
         return ret.message.content.getOrNull(0)?.content
     }
@@ -225,7 +231,7 @@ class Agent(
             _events.tryEmit(AgentEvent.CompactionFinished(compacted))
             return
         }else{
-            error {"Failed to compact session"}
+            error("Failed to compact session.")
             //todo: utilize the following strategy to avoid this
             /**
              * Strategy: 1. call compact with full context
@@ -292,6 +298,10 @@ class Agent(
                             continue
                         }
 
+                        if(lastContextUsage!=null && lastContextUsage!!>model.capabilities.contextLength * Config.get("agent.compact-threshold", 0.9)){
+                            compactSession()
+                        }
+
                         // For interrupt recover
                         val currentOutput: StringBuilder = StringBuilder()
                         val currentReasoning: StringBuilder = StringBuilder()
@@ -348,10 +358,6 @@ class Agent(
 
                                         lastSuccessfulContextHead = context.size
                                         lastContextUsage = reply.usage?.totalTokens
-
-                                        if(lastContextUsage!=null && lastContextUsage!!>model.capabilities.contextLength * Config.get("agent.compact-threshold", 0.9)){
-                                            compactSession()
-                                        }
 
                                         if (reply.finishReason != FinishReason.TOOL_CALLS) {
                                             _events.emit(AgentEvent.RoundStopped(reply.finishReason))

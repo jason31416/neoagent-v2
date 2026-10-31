@@ -1,9 +1,9 @@
 package cn.jason31416.providers
 
-import cn.jason31416.agent.ContentBlock
-import cn.jason31416.agent.ContentType
-import cn.jason31416.agent.ContextEntry
-import cn.jason31416.agent.ModelCapability
+import cn.jason31416.framework.ContentBlock
+import cn.jason31416.framework.ContentType
+import cn.jason31416.framework.ContextEntry
+import cn.jason31416.framework.ModelCapability
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json

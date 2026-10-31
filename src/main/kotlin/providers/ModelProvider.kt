@@ -1,9 +1,9 @@
 package cn.jason31416.providers
 
-import cn.jason31416.agent.ContextEntry
-import cn.jason31416.agent.Model
-import cn.jason31416.agent.ModelEvent
-import cn.jason31416.agent.ToolDefinition
+import cn.jason31416.framework.ContextEntry
+import cn.jason31416.framework.Model
+import cn.jason31416.framework.ModelEvent
+import cn.jason31416.framework.ToolDefinition
 import kotlinx.coroutines.flow.Flow
 
 

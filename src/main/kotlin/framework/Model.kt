@@ -1,4 +1,4 @@
-package cn.jason31416.agent
+package cn.jason31416.framework
 
 import cn.jason31416.providers.ModelProvider
 import cn.jason31416.providers.OpenaiCompatibleModelProvider

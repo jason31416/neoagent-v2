@@ -2,4 +2,5 @@
 
 agent:
   # 0-1. At what ratio of the context should we begin compaction.
+  # Controls all agents.
   compact-threshold: 0.9
