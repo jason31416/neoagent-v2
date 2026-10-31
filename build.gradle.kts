@@ -14,6 +14,7 @@ repositories {
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.yaml:snakeyaml:2.2")
     implementation(kotlin("reflect"))
     implementation("org.jline:jline:3.30.4")
     testImplementation(kotlin("test"))

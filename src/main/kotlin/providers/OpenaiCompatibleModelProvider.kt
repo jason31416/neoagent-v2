@@ -8,6 +8,7 @@ import cn.jason31416.agent.Model
 import cn.jason31416.agent.ModelCapability
 import cn.jason31416.agent.ModelEvent
 import cn.jason31416.agent.Role
+import cn.jason31416.agent.TokenUsage
 import cn.jason31416.agent.ToolCall
 import cn.jason31416.agent.ToolDefinition
 import kotlinx.coroutines.Dispatchers
@@ -143,6 +144,9 @@ open class OpenaiCompatibleModelProvider(
     ): JsonObject = buildJsonObject {
         put("model", model.id)
         put("stream", true)
+        // OpenAI 只在显式要求时返回 usage；DeepSeek 本来就会在最后一个 chunk 带上。
+        // 不认这个字段的网关会返回 400，届时在子类覆盖 buildRequestBody 去掉即可。
+        put("stream_options", buildJsonObject { put("include_usage", true) })
         put("messages", buildMessages(context))
 
         if (tools.isNotEmpty()) {
@@ -329,6 +333,16 @@ open class OpenaiCompatibleModelProvider(
             return Pair(null, null)
         }
 
+        // usage 可能挂在 choices 为空的独立 chunk 上（OpenAI），也可能挂在最后一个
+        // 有 choices 的 chunk 上（DeepSeek），所以必须在 choices 判空之前解析。
+        (chunk["usage"] as? JsonObject)?.let { usage ->
+            val prompt = (usage["prompt_tokens"] as? JsonPrimitive)?.intOrNull
+            val completion = (usage["completion_tokens"] as? JsonPrimitive)?.intOrNull
+            if (prompt != null && completion != null) {
+                acc.usage = TokenUsage(prompt, completion)
+            }
+        }
+
         val choice = (chunk["choices"] as? JsonArray)
             ?.firstOrNull() as? JsonObject
             ?: return Pair(null, null)
@@ -371,7 +385,7 @@ open class OpenaiCompatibleModelProvider(
             null
         }
 
-        return ModelEvent.Completed(message, finish, error)
+        return ModelEvent.Completed(message, finish, error, acc.usage)
     }
 
     protected open fun mapFinishReason(raw: String?, hasToolCalls: Boolean): FinishReason =
@@ -486,6 +500,7 @@ open class OpenaiCompatibleModelProvider(
 
         var finishReason: String? = null
         var error: Exception? = null
+        var usage: TokenUsage? = null
 
         fun appendText(value: String) {
             text.append(value)

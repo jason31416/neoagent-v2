@@ -1,0 +1,5 @@
+# todo: All options should be from here.
+
+agent:
+  # 0-1. At what ratio of the context should we begin compaction.
+  compact-threshold: 0.9

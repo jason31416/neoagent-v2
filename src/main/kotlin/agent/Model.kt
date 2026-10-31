@@ -98,14 +98,33 @@ enum class FinishReason {
     MAX_ROUND_REACHED, // This is not triggered by provider but rather Agent.kt's limit.
 }
 
+/**
+ * Token usage reported by the provider for a single completion.
+ *
+ * [promptTokens] is the whole request context (system prompt, tools, history);
+ * [completionTokens] is everything generated, reasoning included.
+ */
+data class TokenUsage(
+    val promptTokens: Int,
+    val completionTokens: Int,
+) {
+    val totalTokens: Int get() = promptTokens + completionTokens
+}
+
 sealed interface ModelEvent {
     data class TextDelta(val reasoningDelta: String?, val textDelta: String?) : ModelEvent
-    data class Completed(val message: ContextEntry, val finishReason: FinishReason, val exception: Exception?) : ModelEvent
+    data class Completed(
+        val message: ContextEntry,
+        val finishReason: FinishReason,
+        val exception: Exception?,
+        /** Null when the provider/endpoint does not report usage. */
+        val usage: TokenUsage? = null,
+    ) : ModelEvent
 }
 
 class ModelCapability(
-    val maxImage: Int=-1,
-    val contextLength: Int=1048576,
+    var maxImage: Int=-1,
+    var contextLength: Int=1048576,
 ) {
     fun supportsImage() = maxImage > 0
 }

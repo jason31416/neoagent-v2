@@ -24,7 +24,9 @@ import kotlinx.coroutines.selects.select
 import org.jline.terminal.Terminal
 import org.jline.terminal.TerminalBuilder
 import org.jline.utils.WCWidth
+import java.io.File
 import java.io.PrintWriter
+import java.util.Date
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
@@ -82,7 +84,7 @@ private fun createAgent(apiKey: String, scope: CoroutineScope): Agent {
         id = "deepseek-flash",
         displayName = "DeepSeek Flash",
         modelProvider = provider,
-        capabilities = ModelCapability(maxImage = 600),
+        capabilities = ModelCapability(maxImage = 600, contextLength = 10000),
     )
 
     // ToolRegistry 是个单例：注册进去之后只能按名字取，没有“列出全部”的接口。
@@ -131,6 +133,7 @@ private suspend fun chatLoop(agent: Agent, console: ConsoleUi) = coroutineScope 
             agentEvents.onReceive { event ->
                 runCatching { renderAgentEvent(console, event) }
                     .onFailure { console.log("[error] render failed: ${it.message}\n") }
+                agent.writeAgentLog(File("test_agent_log.md"))
                 false
             }
         }
@@ -215,7 +218,9 @@ private fun submit(input: InputLine, console: ConsoleUi, agent: Agent) {
 
     if (line.isNotBlank()) {
         console.log("> $line\n", Ansi.USER)
-        if (!agent.send(Message.TextMessage(line, "user"))) {
+        if (!agent.send(Message.TextMessage(line, "user", buildMap {
+                put("time", Date().toString())
+            }))) {
             console.log("[error] agent is not accepting messages\n")
         }
     }
@@ -249,7 +254,19 @@ private fun renderAgentEvent(console: ConsoleUi, event: AgentEvent) {
             event.message.toolCalls.forEach { call ->
                 console.log("  ⚙ ${call.name}(${call.arguments})\n", Ansi.YELLOW)
             }
+            event.usage?.let { usage ->
+                console.log("[Token usage until now: ${usage.totalTokens}]\n", Ansi.DIM)
+            }
         }
+
+        is AgentEvent.CompactionTriggered -> {
+            console.log("Triggering compaction...\n", Ansi.DIM)
+        }
+
+        is AgentEvent.CompactionFinished -> {
+            console.log("Context compacted\n", Ansi.DIM)
+        }
+
 
         // 工具执行完，result 就是追加进 context 的那条消息。
         is AgentEvent.ToolFinished -> {
@@ -273,6 +290,8 @@ private fun renderAgentEvent(console: ConsoleUi, event: AgentEvent) {
 
         // 用户自己发的消息，不用回显（submit 里已经打过 "> ..." 了）。
         is AgentEvent.AssistantReceivedMessage -> Unit
+
+        else -> Unit
     }
 }
 

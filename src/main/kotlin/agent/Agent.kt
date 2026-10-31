@@ -1,5 +1,6 @@
 package cn.jason31416.agent
 
+import cn.jason31416.Config
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.serialization.json.*
+import java.io.File
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -20,7 +22,7 @@ sealed interface AgentEvent {
     data class ReasoningDelta(val text: String) : AgentEvent
 
     /** 已提交的 assistant 消息；ui最终显示应该以此为基准，包含思考过程，输出，以及工具调用*/
-    data class AssistantReplied(val message: ContextEntry, val interrupted: Boolean=false) : AgentEvent
+    data class AssistantReplied(val message: ContextEntry, val usage: TokenUsage?=null, val interrupted: Boolean=false) : AgentEvent
 
     /** agent收到消息（包括用户消息/系统提示/其他注入消息等）*/
     data class AssistantReceivedMessage(val message: Message) : AgentEvent
@@ -33,6 +35,10 @@ sealed interface AgentEvent {
         val result: ContextEntry,
         val durationMs: Long,
     ) : AgentEvent
+
+    class CompactionTriggered: AgentEvent
+
+    data class CompactionFinished(val summary: String): AgentEvent
 }
 
 /**
@@ -56,7 +62,7 @@ sealed interface Message {
         override fun packToContextBlock(): ContentBlock {
             var attrSection = ""
             if(attributes!=null) {
-                attrSection = " "+attributes.entries.joinToString(" ") { it.key + "=" + it.value }
+                attrSection = " "+attributes.entries.joinToString(" ") { it.key + "=" + it.value}
             }
             return ContentBlock(ContentType.TEXT, "<"+type+attrSection+">"+content+"</"+type+">")
         }
@@ -77,8 +83,6 @@ enum class Phase {
     TOOL
 }
 
-// todo: compaction
-
 /**
  * One agentic loop bound to one conversation.
  *
@@ -91,11 +95,63 @@ class Agent(
     private val tools: Map<String, Tool> = hashMapOf(),
     private val maxTurns: Int = 96,
     private val coroutineScope: CoroutineScope,
+    private val systemPrompt: ContextEntry?=null,
+    private val compactPrompt: String = Agent.defaultCompactPrompt
 ) {
-    public val context = arrayListOf<ContextEntry>()
+    companion object {
+        val defaultCompactPrompt: String = """
+            You are now acting as a compaction engine for neoagent, an AI assistant. Condense the conversation ABOVE into a structured checkpoint that lets another model resume the work with no loss of essential context. This assistant completes real-world tasks with tools (searching, reading, extracting, computing, sending, writing)
+
+            Output the Markdown structure below. Use terse bullets, not prose paragraphs. Write "(none)" for an empty section.
+
+            ## Current Request and Intent
+            - [the current unfinished goal that the agent is working on; quote from user verbatim where the exact wording matters]
+
+            ## User Preferences and Constraints
+            - [stated preferences, hard constraints, required formats, deadlines, tone, and things to avoid]
+
+            ## Key Facts and Sources
+            - [established facts the outcome depends on or anything you found to be worth remembering, each tagged with its origin: user statement, tool result (name the tool or URL), or inference]
+
+            ## Actions Taken and Outcomes
+            - [tool calls that produced a key result or changed something: what was done, where, and the outcome. Record every external side effect — messages sent, files written, records updated, purchases or bookings made — so it is never repeated]
+
+            ## Data and Artifacts
+            - [values, IDs, references, extracted content, links, and produced outputs worth keeping]
+
+            ## Errors and Recoveries
+            - [failed tool calls or wrong turns: what went wrong and what fixed or worked around it]
+
+            ## Pending Tasks
+            - [explicitly requested work not yet completed]
+
+            ## Current Work
+            - [precisely what was in progress at this checkpoint]
+
+            ## Next Step
+            - [the single next action, directly in line with the most recent request, or "(none)"]
+
+            ## Critical Context
+            - [decisions and their rationale, open questions, assumptions still to verify, and the data needed to continue]
+
+            Rules:
+            - Write concise prose in the same language as the user's most recent messages.
+            - Preserve exact names, URLs, identifiers, numbers, dates, quotes, and command or parameter strings; never round, translate, or paraphrase them.
+            - Capture user instructions and corrections faithfully, especially the latest ones: the most recent instruction overrides all earlier ones.
+            - Keep verified facts separate from assumptions; label anything unverified as an assumption.
+            - Discard dead ends, transient tool noise, and details no longer relevant to the goal — keep only what a model needs to continue the work.
+            - Prefer durable state over narration: what is true now, not how the conversation unfolded.
+            - Do NOT mention this summarization request or that the context was compacted.
+            - Output only the checkpoint text: do not call any tool or take any other action.
+            - If the conversation already contains a <compacted> block, it is a PRIOR checkpoint. Do not copy it forward verbatim: preserve still-true facts, drop stale ones, and merge newer information into a single consolidated summary under the same structure.
+        """.trimIndent()
+    }
+    public var context = arrayListOf<ContextEntry>(systemPrompt?:ContextEntry(Role.SYSTEM, mutableListOf()))
     public var effort: String? = null
     public var currentSessionID: String = UUID.randomUUID().toString();
-    private val inbox = Channel<Message>(Channel.UNLIMITED)
+    private var lastSuccessfulContextHead: Int = 0; // exclusive
+    private var lastContextUsage: Int? = null;
+    private val inbox = Channel<Message>(Channel.UNLIMITED);
 
     fun send(msg: Message): Boolean = inbox.trySend(msg).isSuccess
 
@@ -105,6 +161,81 @@ class Agent(
     )
 
     /**
+     * For debug purposes
+     */
+    fun writeAgentLog(logFile: File){
+        val sb = StringBuilder()
+        var cnt = 1
+        for (i in ArrayList(context)){
+            sb.append("## Context Entry #"+(cnt++)+": "+i.role.name)
+            if(i.toolCallID!=null) sb.append(" Responding to ").append(i.toolCallID.substring(0, 15))
+            sb.append("\n\n")
+            if(i.reasoningContent != null){
+                sb.append("> "+i.reasoningContent.replace("\n", "> \n")).append("\n")
+            }
+            for (j in i.content){
+                when (j.type){
+                    ContentType.TEXT -> sb.append(j.content).append("\n")
+                    ContentType.IMAGE -> sb.append("[IMAGE]").append("\n")
+                }
+            }
+            sb.append("\n")
+            for(j in i.toolCalls){
+                sb.append("[Tool call #${j.call_id.substring(0, 15)}]: ${j.name} (${j.arguments})\n")
+            }
+            sb.append("\n")
+        }
+        logFile.writeText(sb.toString())
+    }
+
+    /**
+     * To attempt to compact the session's context between begin, end.
+     * Returns the compacted string summary.
+     */
+    private suspend fun compactContext(begin: Int, end: Int): String? {
+        val toCompact = context.subList(begin, end).toMutableList()
+        toCompact.add(
+            ContextEntry(Role.USER, mutableListOf(ContentBlock(ContentType.TEXT, compactPrompt)))
+        )
+        val ret = model.request(
+            toCompact,
+            listOf(),
+            effort,
+            currentSessionID,
+        )
+            .filterIsInstance<ModelEvent.Completed>()
+            .firstOrNull() ?: error("no Completed");
+
+        return ret.message.content.getOrNull(0)?.content
+    }
+
+    suspend fun compactSession(){
+        _events.tryEmit(AgentEvent.CompactionTriggered())
+        val newContext = arrayListOf<ContextEntry>()
+        if(systemPrompt!=null){
+            newContext.add(systemPrompt)
+        }
+        val compacted = compactContext(0, context.size)
+        if(compacted!=null){
+            newContext.add(ContextEntry(Role.USER, mutableListOf(ContentBlock(ContentType.TEXT,
+                "This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow.\n" +
+                        "<compacted>$compacted</compacted>"
+            ))))
+            context = newContext
+            _events.tryEmit(AgentEvent.CompactionFinished(compacted))
+            return
+        }else{
+            error {"Failed to compact session"}
+            //todo: utilize the following strategy to avoid this
+            /**
+             * Strategy: 1. call compact with full context
+             * if failed: call compact until last successful message
+             * if still failed: binary compaction
+             */
+        }
+    }
+
+    /**
      * The event bus for the agent, used to receive agent's responses.
      *
      * Use events.collect { e-> } to subscribe.
@@ -112,9 +243,11 @@ class Agent(
     val events: SharedFlow<AgentEvent> = _events.asSharedFlow()
 
     /**
+     * Append Message. Should not be called from outside of the class.
+     *
      * The tool call-tool result pair should not be broken, and this MUST NOT be called before the tool result is added to context.
      */
-    private fun appendMessage(msg: Message) {
+    protected fun appendMessage(msg: Message) {
         _events.tryEmit(AgentEvent.AssistantReceivedMessage(msg))
         if(context.isEmpty()||context[context.size-1].role != Role.USER){
             context.add(ContextEntry(Role.USER, arrayListOf(msg.packToContextBlock())))
@@ -126,10 +259,14 @@ class Agent(
     /**
      * The core lifetime worker of the agent
      */
-    private val worker = coroutineScope.launch {
+    val worker = coroutineScope.launch {
         var phase = Phase.IDLE
         var turns = 0
         var pendingToolCalls = arrayListOf<ToolCall>()
+
+        if(systemPrompt!=null){
+            context.add(systemPrompt)
+        }
 
         while (true) {
             try {
@@ -189,7 +326,12 @@ class Agent(
                             request.onAwait { reply ->
                                 when (reply.finishReason) {
                                     FinishReason.CONTENT_FILTER, FinishReason.REQUEST_TOO_LARGE -> {
-                                        // todo: Process this extreme case. Likely context is unusable.
+                                        compactSession()
+                                        _events.emit(AgentEvent.RoundStopped(reply.finishReason))
+                                        phase = Phase.IDLE
+                                    }
+                                    FinishReason.CONTENT_FILTER, FinishReason.LENGTH -> {
+                                        compactSession()
                                         _events.emit(AgentEvent.RoundStopped(reply.finishReason))
                                         phase = Phase.IDLE
                                     }
@@ -202,7 +344,14 @@ class Agent(
 
                                     else -> {
                                         context += reply.message
-                                        _events.emit(AgentEvent.AssistantReplied(reply.message))
+                                        _events.emit(AgentEvent.AssistantReplied(reply.message, usage=reply.usage))
+
+                                        lastSuccessfulContextHead = context.size
+                                        lastContextUsage = reply.usage?.totalTokens
+
+                                        if(lastContextUsage!=null && lastContextUsage!!>model.capabilities.contextLength * Config.get("agent.compact-threshold", 0.9)){
+                                            compactSession()
+                                        }
 
                                         if (reply.finishReason != FinishReason.TOOL_CALLS) {
                                             _events.emit(AgentEvent.RoundStopped(reply.finishReason))
