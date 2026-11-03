@@ -1,8 +1,9 @@
 package cn.jason31416
 
-import cn.jason31416.framework.Agent
+import cn.jason31416.framework.AgentLoop
 import cn.jason31416.framework.AgentEvent
 import cn.jason31416.framework.ContentType
+import cn.jason31416.framework.MemoryContext
 import cn.jason31416.framework.Message
 import cn.jason31416.framework.Model
 import cn.jason31416.framework.ModelCapability
@@ -17,7 +18,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
@@ -74,11 +74,11 @@ fun main() {
 // ========================================================================
 
 /**
- * 把 provider、model、tool 接到一个 [Agent] 上。
+ * 把 provider、model、tool 接到一个 [AgentLoop] 上。
  *
  * 这是 Main 里唯一碰 provider 的地方；下面的 chatLoop 只认 Agent 接口。
  */
-private fun createAgent(apiKey: String, scope: CoroutineScope): Agent {
+private fun createAgent(apiKey: String, scope: CoroutineScope): AgentLoop {
     val provider = DeepSeekProvider(apikey = apiKey)
     val model = Model(
         id = "deepseek-flash",
@@ -91,7 +91,9 @@ private fun createAgent(apiKey: String, scope: CoroutineScope): Agent {
     registerTestingTools()
     val tools = ToolRegistry.allTools()
 
-    return Agent(model = model, tools = tools, coroutineScope = scope)
+    return AgentLoop(model = model, context=MemoryContext(
+        "You are a helpful assistant. Do not use emoji."
+    ), tools = tools, coroutineScope = scope)
 }
 
 // ========================================================================
@@ -102,13 +104,13 @@ private fun createAgent(apiKey: String, scope: CoroutineScope): Agent {
  * 聊天主循环。
  *
  * 两个输入源：
- *  - 键盘：Enter 把当前行交给 [Agent.send]；
- *  - 事件：把 [Agent.events] 转成 [AgentEvent] 逐个画到控制台。
+ *  - 键盘：Enter 把当前行交给 [AgentLoop.send]；
+ *  - 事件：把 [AgentLoop.events] 转成 [AgentEvent] 逐个画到控制台。
  *
  * 两者都通过 Channel 汇到这个单线程的 select 循环里，所以同一时刻
  * 只有一个线程写终端，不会互相撕屏。
  */
-private suspend fun chatLoop(agent: Agent, console: ConsoleUi) = coroutineScope {
+private suspend fun chatLoop(agent: AgentLoop, console: ConsoleUi) = coroutineScope {
     // Agent 暴露的是 SharedFlow；转成 Channel 才能和键盘一起 select。
     // UNDISPATCHED：先完成订阅再往下走，避免漏掉最开始的事件。
     val agentEvents = Channel<AgentEvent>(Channel.UNLIMITED)
@@ -154,7 +156,7 @@ private fun handleKey(
     key: Key,
     input: InputLine,
     console: ConsoleUi,
-    agent: Agent,
+    agent: AgentLoop,
 ): Boolean = when (key) {
     Key.Interrupt -> true
 
@@ -209,7 +211,7 @@ private fun handleKey(
 }
 
 /** Enter：把输入行交给 Agent，然后立刻回到输入状态。 */
-private fun submit(input: InputLine, console: ConsoleUi, agent: Agent) {
+private fun submit(input: InputLine, console: ConsoleUi, agent: AgentLoop) {
     val line = input.take()
 
     // 发新消息时回到底部，保证能看到自己刚发的和接下来的回复。

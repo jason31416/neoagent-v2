@@ -23,12 +23,12 @@ enum class Role {
   }
 }
  */
+@kotlinx.serialization.Serializable
 data class ToolCall(
     val call_id: String,
     val name: String,
     val arguments: String
 )
-
 enum class ContentType {
     TEXT,
     IMAGE
@@ -44,11 +44,13 @@ enum class ContentType {
   }
 }
  */
+@kotlinx.serialization.Serializable
 data class ContentBlock(
     val type: ContentType,
     val content: String, // This can both be the text or the image url, depending on the type
 )
 
+@kotlinx.serialization.Serializable
 data class ContextEntry(
     val role: Role,
     val content: MutableList<ContentBlock>,

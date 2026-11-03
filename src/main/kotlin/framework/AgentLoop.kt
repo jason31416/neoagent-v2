@@ -14,8 +14,6 @@ import java.io.File
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
-//todo: Extract context to external: array list or database
-
 sealed interface AgentEvent {
     /** 流式文本，临时的；UI 可以边收边显示 */
     data class AssistantDelta(val text: String) : AgentEvent
@@ -92,13 +90,13 @@ enum class Phase {
  * for, append their results, and stop as soon as the model answers without asking for a tool.
  * Everything that can block is a suspend call, so cancellation just works.
  */
-class Agent(
-    private val model: Model,
+class AgentLoop(
+    private var model: Model,
+    public val context: Context,
     private val tools: Map<String, Tool> = hashMapOf(),
     private val maxTurns: Int = 96,
     private val coroutineScope: CoroutineScope,
-    private val systemPrompt: ContextEntry?=null,
-    private val compactPrompt: String = Agent.defaultCompactPrompt
+    private val compactPrompt: String = defaultCompactPrompt
 ) {
     companion object {
         val defaultCompactPrompt: String = """
@@ -148,10 +146,9 @@ class Agent(
             - If the conversation already contains a <compacted> block, it is a PRIOR checkpoint. Do not copy it forward verbatim: preserve still-true facts, drop stale ones, and merge newer information into a single consolidated summary under the same structure.
         """.trimIndent()
     }
-    public var context = arrayListOf<ContextEntry>(systemPrompt?:ContextEntry(Role.SYSTEM, mutableListOf()))
+//    public var context = arrayListOf<ContextEntry>(systemPrompt?:ContextEntry(Role.SYSTEM, mutableListOf()))
     public var effort: String? = null
     public var currentSessionID: String = UUID.randomUUID().toString();
-    private var lastSuccessfulContextHead: Int = 0; // exclusive
     private var lastContextUsage: Int? = null;
     private val inbox = Channel<Message>(Channel.UNLIMITED);
 
@@ -168,7 +165,7 @@ class Agent(
     fun writeAgentLog(logFile: File){
         val sb = StringBuilder()
         var cnt = 1
-        for (i in ArrayList(context)){
+        for (i in context.getActiveContext()){
             sb.append("## Context Entry #"+(cnt++)+": "+i.role.name)
             if(i.toolCallID!=null) sb.append(" Responding to ").append(i.toolCallID.substring(0, 15))
             sb.append("\n\n")
@@ -194,8 +191,7 @@ class Agent(
      * To attempt to compact the session's context between begin, end.
      * Returns the compacted string summary.
      */
-    private suspend fun compactContext(begin: Int, end: Int): String? {
-        val toCompact = context.subList(begin, end).toMutableList()
+    private suspend fun compactContext(toCompact: MutableList<ContextEntry>): String? {
         toCompact.add(
             ContextEntry(Role.USER, mutableListOf(ContentBlock(ContentType.TEXT, compactPrompt)))
         )
@@ -217,17 +213,13 @@ class Agent(
 
     suspend fun compactSession(){
         _events.tryEmit(AgentEvent.CompactionTriggered())
-        val newContext = arrayListOf<ContextEntry>()
-        if(systemPrompt!=null){
-            newContext.add(systemPrompt)
-        }
-        val compacted = compactContext(0, context.size)
+        val compacted = compactContext(context.getActiveContext().toMutableList())
         if(compacted!=null){
-            newContext.add(ContextEntry(Role.USER, mutableListOf(ContentBlock(ContentType.TEXT,
+            context.advanceHead()
+            context.addEntry(ContextEntry(Role.USER, mutableListOf(ContentBlock(ContentType.TEXT,
                 "This is an automatically generated checkpoint condensing an earlier span of the conversation to free up context. Treat the captured context as established background and build on it without restating it. Continue the task directly from the messages that follow.\n" +
                         "<compacted>$compacted</compacted>"
             ))))
-            context = newContext
             _events.tryEmit(AgentEvent.CompactionFinished(compacted))
             return
         }else{
@@ -255,10 +247,10 @@ class Agent(
      */
     protected fun appendMessage(msg: Message) {
         _events.tryEmit(AgentEvent.AssistantReceivedMessage(msg))
-        if(context.isEmpty()||context[context.size-1].role != Role.USER){
-            context.add(ContextEntry(Role.USER, arrayListOf(msg.packToContextBlock())))
+        if(context.getLastContext()?.role != Role.USER){
+            context.addEntry(ContextEntry(Role.USER, arrayListOf(msg.packToContextBlock())))
         }else{
-            context[context.size-1].content.add(msg.packToContextBlock())
+            context.getLastContext()!!.content.add(msg.packToContextBlock())
         }
     }
 
@@ -269,10 +261,6 @@ class Agent(
         var phase = Phase.IDLE
         var turns = 0
         var pendingToolCalls = arrayListOf<ToolCall>()
-
-        if(systemPrompt!=null){
-            context.add(systemPrompt)
-        }
 
         while (true) {
             try {
@@ -307,7 +295,7 @@ class Agent(
                         val currentReasoning: StringBuilder = StringBuilder()
 
                         val request = async {
-                            model.request(context.toList(), tools.values.map { it.meta }, effort, currentSessionID)
+                            model.request(context.getActiveContext(), tools.values.map { it.meta }, effort, currentSessionID)
                                 .onEach { e ->
                                     if (e is ModelEvent.TextDelta){
                                         if(e.textDelta!=null) {
@@ -340,7 +328,7 @@ class Agent(
                                         _events.emit(AgentEvent.RoundStopped(reply.finishReason))
                                         phase = Phase.IDLE
                                     }
-                                    FinishReason.CONTENT_FILTER, FinishReason.LENGTH -> {
+                                    FinishReason.LENGTH -> {
                                         compactSession()
                                         _events.emit(AgentEvent.RoundStopped(reply.finishReason))
                                         phase = Phase.IDLE
@@ -353,10 +341,9 @@ class Agent(
                                     }
 
                                     else -> {
-                                        context += reply.message
+                                        context.addEntry(reply.message)
                                         _events.emit(AgentEvent.AssistantReplied(reply.message, usage=reply.usage))
 
-                                        lastSuccessfulContextHead = context.size
                                         lastContextUsage = reply.usage?.totalTokens
 
                                         if (reply.finishReason != FinishReason.TOOL_CALLS) {
@@ -378,7 +365,7 @@ class Agent(
                                         reasoningContent=currentReasoning.toString().ifEmpty { null }
                                     )
                                     _events.emit(AgentEvent.AssistantReplied(assistantMsg, interrupted = true))
-                                    context += assistantMsg
+                                    context.addEntry(assistantMsg)
                                 }
                                 appendMessage(msg)
                                 while (true) {
@@ -401,7 +388,7 @@ class Agent(
                         if (msg != null) {
                             for (i in pendingToolCalls) {
                                 var reply = i.reply("<error>tool execution was cancelled due to interrupting user input</error>");
-                                context += reply
+                                context.addEntry(reply)
                                 _events.emit(AgentEvent.ToolFinished(i, reply, -1))
                             }
                             appendMessage(msg)
@@ -419,7 +406,7 @@ class Agent(
 
                         val timestamp = System.currentTimeMillis()
                         val result = execute(call)
-                        context += result
+                        context.addEntry(result)
                         _events.emit(AgentEvent.ToolFinished(call, result, System.currentTimeMillis() - timestamp))
                     }
                 }

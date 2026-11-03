@@ -1,0 +1,4 @@
+# todo here:
+
+This is planned to be a web panel for all management/configuration to happen
+The panel should also provide a webchat module which should be a channel for the agent.
