@@ -24,6 +24,8 @@ fun startWebServer() {
         install(CORS) { allowHost("*") }
 
         routing {
+            apiRoutes()
+
             staticResources("/", "web") {
                 default("index.html")
             }
