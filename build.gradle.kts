@@ -29,7 +29,9 @@ dependencies {
     implementation("io.ktor:ktor-server-websockets:3.1.3")
     implementation("io.ktor:ktor-server-content-negotiation:3.1.3")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.3")
-    implementation("io.ktor:ktor-server-cors:3.1.3") // 本地开发前后端端口不同需要
+    implementation("io.ktor:ktor-server-cors:3.1.3")
+    implementation("io.ktor:ktor-server-auth:3.1.3")
+    implementation("io.ktor:ktor-server-sessions:3.1.3")
 
     implementation("org.kotlincrypto.hash:sha2:0.7.0")
 }
@@ -50,12 +52,12 @@ tasks.named<JavaExec>("run") {
     // 让 `./gradlew run` 能把键盘输入转发给程序。
     // 注意：Gradle 给子进程接的是管道而不是 tty，raw mode 用不了，
     // 真正要跑 TUI 请用 `./gradlew installDist` 再执行生成的脚本。
-    standardInput = System.`in`
+//    standardInput = System.`in`
 }
 
 tasks.register<Exec>("buildFrontend") {
     workingDir("web")
-    commandLine("npm", "run", "build")
+    commandLine("/bin/zsh", "-lc", "npm run build")
 }
 
 tasks.processResources {
