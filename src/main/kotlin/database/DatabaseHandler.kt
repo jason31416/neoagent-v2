@@ -9,6 +9,13 @@ import org.jetbrains.exposed.sql.transactions.transaction
 
 val db: Database = Database.connect("jdbc:sqlite:neoagent.db", driver = "org.sqlite.JDBC")
 
+object MetaTable: Table("metadata") {
+    val key = text("key")
+    val value = text("value")
+
+    override val primaryKey = PrimaryKey(key)
+}
+
 object DatabaseHandler {
     fun init() {
         transaction(db) {
@@ -16,6 +23,7 @@ object DatabaseHandler {
             SchemaUtils.createMissingTablesAndColumns(ContextTable)
             SchemaUtils.createMissingTablesAndColumns(AgentsTable)
             SchemaUtils.createMissingTablesAndColumns(IMMessagesTable)
+            SchemaUtils.createMissingTablesAndColumns(MetaTable)
         }
     }
 }

@@ -30,6 +30,8 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation:3.1.3")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.3")
     implementation("io.ktor:ktor-server-cors:3.1.3") // 本地开发前后端端口不同需要
+
+    implementation("org.kotlincrypto.hash:sha2:0.7.0")
 }
 
 kotlin {

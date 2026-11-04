@@ -3,6 +3,7 @@ package cn.jason31416
 import org.yaml.snakeyaml.Yaml
 import java.io.File
 
+// todo: reconstruction
 class Config(val map: Map<String, Any>) {
     companion object {
         private var configTree: Config = Config(mapOf())
