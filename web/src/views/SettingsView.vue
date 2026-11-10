@@ -285,7 +285,7 @@ onBeforeUnmount(() => {
 
     <div class="mt-6 flex min-h-0 flex-col gap-4 lg:mt-8 lg:flex-1 lg:flex-row lg:gap-10">
       <aside
-        class="scroll-thin flex w-full shrink-0 flex-col gap-2 px-1 pt-1 lg:w-49 lg:gap-0 lg:overflow-y-auto"
+        class="scroll-thin flex w-full shrink-0 flex-col gap-2 px-1 pt-1 lg:w-50 lg:gap-0 lg:overflow-y-auto"
       >
         <div class="relative shrink-0">
           <Search

@@ -209,7 +209,7 @@ onBeforeUnmount(() => {
     </Transition>
 
     <div class="mt-6 flex min-h-0 flex-col gap-4 lg:mt-8 lg:flex-1 lg:flex-row lg:gap-10">
-      <aside class="scroll-thin flex w-full shrink-0 flex-col px-1 pt-1 lg:w-49 lg:overflow-y-auto">
+      <aside class="scroll-thin flex w-full shrink-0 flex-col px-1 pt-1 lg:w-50 lg:overflow-y-auto">
         <div v-if="loading" class="flex gap-1.5 lg:block lg:space-y-2">
           <div
             v-for="index in 5"
