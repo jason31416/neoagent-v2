@@ -203,8 +203,8 @@ onBeforeUnmount(() => {
     </Transition>
 
     <div class="mt-8 flex min-h-0 flex-1 gap-10">
-      <aside class="scroll-thin w-[196px] shrink-0 overflow-y-auto pr-1">
-        <div v-if="loading" class="space-y-2 py-1">
+      <aside class="scroll-thin flex w-49 shrink-0 flex-col overflow-y-auto px-1 pt-1">
+        <div v-if="loading" class="space-y-2">
           <div v-for="index in 5" :key="index" class="h-9 animate-pulse rounded-lg bg-panel"></div>
         </div>
 
@@ -219,12 +219,15 @@ onBeforeUnmount(() => {
           >
             <span
               v-if="activeId === channel.id"
-              class="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-brand-400"
+              class="absolute left-0 top-1/2 h-4 w-0.75 -translate-y-1/2 rounded-full bg-brand-400 ml-1"
             ></span>
-            <span
-              class="h-1.5 w-1.5 shrink-0 rounded-full"
-              :class="statusMeta[channel.status].dot"
-            ></span>
+            <span class="flex w-3.5 shrink-0 items-center justify-center">
+              <span
+                class="h-1.5 w-1.5 rounded-full"
+                :class="statusMeta[channel.status].dot"
+                :title="statusMeta[channel.status].label"
+              ></span>
+            </span>
             <span
               class="min-w-0 flex-1 truncate text-[13px]"
               :class="activeId === channel.id ? 'font-medium text-brand-800' : ''"
@@ -236,7 +239,10 @@ onBeforeUnmount(() => {
               class="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-400"
               title="有未保存的修改"
             ></span>
-            <span class="shrink-0 text-[10.5px] text-slate-400">
+            <span
+              class="shrink-0 rounded-full px-2 py-0.5 text-[10.5px]"
+              :class="statusMeta[channel.status].pill"
+            >
               {{ statusMeta[channel.status].label }}
             </span>
           </button>
@@ -303,13 +309,14 @@ onBeforeUnmount(() => {
             <section
               v-for="group in active.groups"
               :key="group.id"
-              class="overflow-hidden rounded-2xl border border-hairline bg-white"
+              class="overflow-hidden rounded-2xl"
             >
-              <div class="border-b border-hairline bg-panel/40 px-6 py-2.5">
-                <h3 class="text-[12px] font-medium text-slate-500">{{ group.title }}</h3>
+              <div class="flex items-center gap-2 px-6 pt-4 pb-1">
+                <span class="h-4 w-1 shrink-0 rounded-full bg-brand-400"></span>
+                <h3 class="text-[13px] font-semibold text-brand-800">{{ group.title }}</h3>
               </div>
 
-              <div class="divide-y divide-hairline px-6">
+              <div class="px-6 pb-2">
                 <SchemaField
                   v-for="field in group.fields"
                   :key="field.key"
