@@ -4,6 +4,8 @@ import cn.jason31416.framework.ChannelConfig
 import cn.jason31416.framework.Config
 import cn.jason31416.framework.ConfigSection
 
+// TODO: ALL DATA IN THIS FILE IS ONLY MOCK DATA.
+
 object SystemConfig : Config("system", "config/system.yml") {
     object panel : ConfigSection("panel", "面板", SystemConfig) {
         val panelTitle = text("panelTitle", "面板标题", default = "NeoAgent WebUI")
