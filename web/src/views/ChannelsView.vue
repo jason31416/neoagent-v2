@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { AlertTriangle, Loader2, Save, Undo2 } from 'lucide-vue-next'
+import { AlertTriangle, Loader2, Save, Undo2, Webhook } from 'lucide-vue-next'
 import { api, ApiError, type ChannelConfig, type ChannelStatus, type SchemaValue } from '@/lib/api'
 import { useConfirm } from '@/lib/confirm'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import SchemaField from '@/components/SchemaField.vue'
 import ToggleSwitch from '@/components/ToggleSwitch.vue'
+import discordSvg from '@/assets/icons/channel-discord.svg?raw'
+import larkSvg from '@/assets/icons/channel-lark.svg?raw'
+import slackSvg from '@/assets/icons/channel-slack.svg?raw'
+import telegramSvg from '@/assets/icons/channel-telegram.svg?raw'
 
 const channels = ref<ChannelConfig[]>([])
 const original = ref<ChannelConfig[]>([])
@@ -19,11 +23,24 @@ const saved = ref(false)
 
 const { confirmState, askConfirm, answerConfirm } = useConfirm()
 
-const statusMeta: Record<ChannelStatus, { label: string; pill: string; dot: string }> = {
-  running: { label: '运行中', pill: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
-  stopped: { label: '已停止', pill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-300' },
-  error: { label: '配置有误', pill: 'bg-red-50 text-red-600', dot: 'bg-red-500' },
-  idle: { label: '未配置', pill: 'bg-slate-100 text-slate-500', dot: 'bg-slate-300' },
+const statusMeta: Record<ChannelStatus, { label: string; pill: string }> = {
+  running: { label: '运行中', pill: 'bg-emerald-50 text-emerald-700' },
+  stopped: { label: '已停止', pill: 'bg-slate-100 text-slate-500' },
+  error: { label: '配置有误', pill: 'bg-red-50 text-red-600' },
+  idle: { label: '未配置', pill: 'bg-slate-100 text-slate-500' },
+}
+
+/** lucide 未收录的品牌图标：Akar Icons 的 *-fill 与 IconPark Outline 的 new-lark。 */
+const channelIcons: Record<string, string> = {
+  telegram: telegramSvg,
+  discord: discordSvg,
+  slack: slackSvg,
+  lark: larkSvg,
+}
+
+/** ?raw 内联到 DOM，SVG 里的 currentColor 才能继承导航项的纯色；空串表示没有图标。 */
+function iconSvg(id: string): string {
+  return channelIcons[id] ?? ''
 }
 
 const active = computed(
@@ -227,23 +244,33 @@ onBeforeUnmount(() => {
             :key="channel.id"
             type="button"
             class="relative flex w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-left transition-colors duration-150 lg:w-full lg:py-2 lg:whitespace-normal"
-            :class="activeId === channel.id ? 'bg-brand-50' : 'text-slate-600 hover:bg-panel/70'"
+            :class="
+              activeId === channel.id
+                ? 'bg-brand-50 text-brand-800'
+                : 'text-slate-600 hover:bg-panel/70'
+            "
             @click="activeId = channel.id"
           >
             <span
               v-if="activeId === channel.id"
               class="absolute left-0 top-1/2 ml-1 hidden h-4 w-0.75 -translate-y-1/2 rounded-full bg-brand-400 lg:block"
             ></span>
-            <span class="flex w-3.5 shrink-0 items-center justify-center">
+            <span
+              v-if="channel.id === 'webhook' || iconSvg(channel.id)"
+              class="flex w-4 shrink-0 items-center justify-center"
+            >
+              <Webhook v-if="channel.id === 'webhook'" :size="15" aria-hidden="true" />
               <span
-                class="h-1.5 w-1.5 rounded-full"
-                :class="statusMeta[channel.status].dot"
-                :title="statusMeta[channel.status].label"
+                v-else
+                class="inline-flex items-center justify-center"
+                style="font-size: 15px"
+                aria-hidden="true"
+                v-html="iconSvg(channel.id)"
               ></span>
             </span>
             <span
               class="min-w-0 truncate text-[13px] lg:flex-1"
-              :class="activeId === channel.id ? 'font-medium text-brand-800' : ''"
+              :class="activeId === channel.id ? 'font-medium' : ''"
             >
               {{ channel.name }}
             </span>
