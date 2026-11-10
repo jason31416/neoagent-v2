@@ -2,7 +2,9 @@ package cn.jason31416.panel
 
 import cn.jason31416.NeoagentRuntime
 import cn.jason31416.NeoagentRuntime.generateSecret
+import cn.jason31416.config.AppConfigs
 import cn.jason31416.database.DatabaseHandler
+import cn.jason31416.framework.ConfigManager
 import cn.jason31416.database.MetaTable
 import cn.jason31416.database.db
 import io.ktor.http.HttpStatusCode
@@ -491,362 +493,10 @@ fun Routing.apiRoutes() {
         }
 
 
-        // ---- 频道与系统设置：仍然是内存实现，接口形状就是前端要对接的那份 ----
-
-        /**
-         * 一个配置项的描述加默认值。前端只按 type 渲染，不认识任何具体字段，
-         * 增加配置项时只改这里。
-         */
-        fun schemaField(
-            key: String,
-            label: String,
-            type: String,
-            default: Any? = null,
-            help: String? = null,
-            required: Boolean = false,
-            unit: String? = null,
-            placeholder: String? = null,
-            options: List<Pair<String, String>>? = null,
-            disabled: Boolean = false,
-        ): MutableMap<String, Any?> = mutableMapOf(
-            "key" to key,
-            "label" to label,
-            "type" to type,
-            "default" to default,
-            "help" to help,
-            "required" to required,
-            "unit" to unit,
-            "placeholder" to placeholder,
-            "options" to options?.map { mutableMapOf("value" to it.first, "label" to it.second) },
-            "disabled" to disabled,
-        )
-
-        fun schemaGroup(
-            id: String,
-            title: String,
-            vararg fields: MutableMap<String, Any?>,
-        ): MutableMap<String, Any?> = mutableMapOf(
-            "id" to id,
-            "title" to title,
-            "fields" to fields.toList(),
-        )
-
-        @Suppress("UNCHECKED_CAST")
-        fun schemaGroups(container: Map<String, Any?>): List<Map<String, Any?>> =
-            (container["groups"] as? List<Map<String, Any?>>).orEmpty()
-
-        @Suppress("UNCHECKED_CAST")
-        fun schemaFields(group: Map<String, Any?>): List<Map<String, Any?>> =
-            (group["fields"] as? List<Map<String, Any?>>).orEmpty()
-
-        /** 每个频道一份自己的字段表，因此这里不能共用一份结构。 */
-        val channelDefs: List<Map<String, Any?>> = listOf(
-            mutableMapOf(
-                "id" to "telegram",
-                "name" to "Telegram",
-                "enabled" to true,
-                "groups" to listOf(
-                    schemaGroup(
-                        "basic", "基础",
-                        schemaField(
-                            "botToken", "Bot Token", "secret", "7123456789:AAH6xkQ2mB0pLr4tZ8wYdEfGhIjKlMnOpQ",
-                            help = "从 @BotFather 获取，保存后只显示末四位",
-                            required = true,
-                        ),
-                        schemaField(
-                            "apiBase", "接口地址", "text", "https://api.telegram.org",
-                            help = "自建反代时改这里",
-                        ),
-                        schemaField("proxy", "代理", "text", "", placeholder = "http://127.0.0.1:7890"),
-                        schemaField("pollTimeout", "轮询超时", "number", 25, unit = "秒"),
-                    ),
-                    schemaGroup(
-                        "message", "消息",
-                        schemaField(
-                            "allowedChats", "允许的会话", "tags", listOf("@neoagent_group", "1029384756"),
-                            help = "留空表示接受全部会话",
-                            placeholder = "@your_channel",
-                        ),
-                        schemaField("allowGroups", "接受群组消息", "switch", true),
-                        schemaField(
-                            "parseMode", "消息格式", "select", "markdown",
-                            options = listOf(
-                                "markdown" to "MarkdownV2",
-                                "html" to "HTML",
-                                "plain" to "纯文本",
-                            ),
-                        ),
-                        schemaField("welcomeText", "欢迎语", "textarea", "", placeholder = "留空则不发送"),
-                    ),
-                    schemaGroup(
-                        "advanced", "高级",
-                        schemaField(
-                            "webhookUrl", "回调地址", "readonly",
-                            "https://panel.example.com/api/channels/telegram/webhook",
-                            disabled = true,
-                        ),
-                        schemaField("disablePreview", "关闭链接预览", "switch", true),
-                        schemaField(
-                            "rateLimit", "速率上限", "number", 60, unit = "条/分",
-                            help = "超过后排队等待，不会丢消息",
-                        ),
-                    ),
-                ),
-            ),
-            mutableMapOf(
-                "id" to "discord",
-                "name" to "Discord",
-                "enabled" to true,
-                "groups" to listOf(
-                    schemaGroup(
-                        "basic", "基础",
-                        schemaField(
-                            "botToken", "Bot Token", "secret", "MTIzNDU2Nzg5:MOCK.DISCORD.TOKEN",
-                            help = "在开发者后台的 Bot 页面获取",
-                            required = true,
-                        ),
-                        schemaField("proxy", "代理", "text", "", placeholder = "http://127.0.0.1:7890"),
-                    ),
-                    schemaGroup(
-                        "message", "消息",
-                        schemaField("allowedChannels", "允许的频道", "tags", listOf("neoagent")),
-                        schemaField("commandPrefix", "命令前缀", "text", "!"),
-                    ),
-                    schemaGroup(
-                        "advanced", "高级",
-                        schemaField("shardId", "分片编号", "number", 0, help = "只有大型机器人需要"),
-                    ),
-                ),
-            ),
-            mutableMapOf(
-                "id" to "slack",
-                "name" to "Slack",
-                "enabled" to false,
-                "groups" to listOf(
-                    schemaGroup(
-                        "basic", "基础",
-                        schemaField("botToken", "Bot Token", "secret", "", placeholder = "xoxb-...", required = true),
-                        schemaField("signingSecret", "Signing Secret", "secret", "", required = true),
-                    ),
-                    schemaGroup(
-                        "message", "消息",
-                        schemaField("defaultChannel", "默认频道", "text", "#general"),
-                    ),
-                ),
-            ),
-            mutableMapOf(
-                "id" to "lark",
-                "name" to "飞书",
-                "enabled" to true,
-                "groups" to listOf(
-                    schemaGroup(
-                        "basic", "基础",
-                        schemaField("appId", "App ID", "text", "cli_mock_app_id", required = true),
-                        schemaField("appSecret", "App Secret", "secret", "", required = true),
-                    ),
-                    schemaGroup(
-                        "message", "消息",
-                        schemaField("encryptKey", "加密 Key", "secret", ""),
-                        schemaField("allowedGroups", "允许的群", "tags", emptyList<String>()),
-                    ),
-                ),
-            ),
-            mutableMapOf(
-                "id" to "webhook",
-                "name" to "自建 Webhook",
-                "enabled" to false,
-                "groups" to listOf(
-                    schemaGroup(
-                        "basic", "基础",
-                        schemaField(
-                            "endpoint", "接收路径", "readonly", "/api/channels/webhook/incoming",
-                            disabled = true,
-                        ),
-                    ),
-                    schemaGroup(
-                        "advanced", "高级",
-                        schemaField("secret", "签名密钥", "secret", ""),
-                        schemaField("allowedIps", "允许的来源 IP", "tags", emptyList<String>()),
-                    ),
-                ),
-            ),
-        )
-
-        val channelValues: MutableMap<String, MutableMap<String, Any?>> = mutableMapOf()
-        for (def in channelDefs) {
-            val id = def["id"] as String
-            val values = mutableMapOf<String, Any?>("enabled" to (def["enabled"] == true))
-            schemaGroups(def).forEach { group ->
-                schemaFields(group).forEach { field ->
-                    values[field["key"] as String] = field["default"]
-                }
-            }
-            channelValues[id] = values
-        }
-
-        fun blankValue(value: Any?): Boolean = when (value) {
-            null -> true
-            is String -> value.isBlank()
-            is Collection<*> -> value.isEmpty()
-            else -> false
-        }
-
-        fun channelStatus(def: Map<String, Any?>, values: Map<String, Any?>): String {
-            if (values["enabled"] != true) return "stopped"
-            val missing = schemaGroups(def)
-                .flatMap { schemaFields(it) }
-                .any { it["required"] == true && blankValue(values[it["key"] as String]) }
-            return if (missing) "error" else "running"
-        }
-
-        fun groupView(group: Map<String, Any?>, values: Map<String, Any?>): Map<String, Any?> = mapOf(
-            "id" to group["id"],
-            "title" to group["title"],
-            "fields" to schemaFields(group).map { field ->
-                val view = LinkedHashMap(field)
-                view.remove("default")
-                val key = field["key"] as String
-                val secret = field["type"] == "secret"
-                val raw = values[key]
-                view["value"] = if (secret) {
-                    val text = raw as? String
-                    if (text.isNullOrEmpty()) "" else maskKey(text)
-                } else {
-                    raw
-                }
-                view["masked"] = secret
-                view
-            },
-        )
-
-        fun channelView(def: Map<String, Any?>): Map<String, Any?> {
-            val id = def["id"] as String
-            val values = channelValues[id].orEmpty()
-            return mapOf(
-                "id" to id,
-                "name" to def["name"],
-                "enabled" to (values["enabled"] == true),
-                "status" to channelStatus(def, values),
-                "groups" to schemaGroups(def).map { groupView(it, values) },
-            )
-        }
-
-        /** 把提交上来的值合并进目标表；密钥如果原样回传的是掩码，就保持旧值。 */
-        fun applyValues(
-            target: MutableMap<String, Any?>,
-            incoming: JsonObject,
-            fields: List<Map<String, Any?>>,
-        ) {
-            val byKey = fields.associateBy { it["key"] as String }
-            for ((key, element) in incoming) {
-                if (key == "enabled") {
-                    target[key] = (element as? JsonPrimitive)?.booleanOrNull ?: false
-                    continue
-                }
-                val spec = byKey[key] ?: continue
-                if (spec["type"] == "readonly") continue
-                if (spec["type"] == "secret") {
-                    val current = target[key] as? String ?: ""
-                    val masked = if (current.isEmpty()) "" else maskKey(current)
-                    val next = (element as? JsonPrimitive)?.contentOrNull ?: ""
-                    if (next == masked) continue
-                    target[key] = next
-                    continue
-                }
-                target[key] = element.toPlainValue()
-            }
-        }
-
-        get("/api/channels") {
-            call.respondObj("channels" to channelDefs.map { channelView(it) })
-        }
-
-        post("/api/channels") {
-            val body = runCatching { call.receive<JsonObject>() }.getOrNull()
-            if (body == null) {
-                call.respond(HttpStatusCode.BadRequest, errorBody("请求体不是合法的 JSON"))
-                return@post
-            }
-
-            val submitted = body["values"] as? JsonObject ?: JsonObject(emptyMap())
-            for ((channelId, payload) in submitted) {
-                val def = channelDefs.firstOrNull { it["id"] == channelId } ?: continue
-                val incoming = payload as? JsonObject ?: continue
-                val target = channelValues.getOrPut(channelId) { mutableMapOf() }
-                applyValues(target, incoming, schemaGroups(def).flatMap { schemaFields(it) })
-            }
-
-            call.respondObj("channels" to channelDefs.map { channelView(it) })
-        }
-
-        val settingsDefs: List<Map<String, Any?>> = listOf(
-            schemaGroup(
-                "panel", "面板",
-                schemaField("panelTitle", "面板标题", "text", "NeoAgent WebUI"),
-                schemaField(
-                    "language", "语言", "select", "zh-CN",
-                    options = listOf("zh-CN" to "简体中文", "en" to "English", "auto" to "跟随系统"),
-                ),
-                schemaField("openOnStart", "启动时打开浏览器", "switch", true, help = "只在桌面环境下生效"),
-                schemaField("sessionTimeout", "会话有效期", "number", 7, unit = "天"),
-            ),
-            schemaGroup(
-                "runtime", "运行时",
-                schemaField(
-                    "dataDir", "数据目录", "readonly", "~/Library/Application Support/NeoAgent/data",
-                    disabled = true,
-                ),
-                schemaField(
-                    "maxAgents", "最大并发 Agent", "number", 4, unit = "个",
-                    help = "超出后排队，不会丢弃请求",
-                ),
-                schemaField("idleTimeout", "空闲回收", "number", 30, unit = "分钟"),
-                schemaField("gcInterval", "清理间隔", "number", 10, unit = "分钟"),
-            ),
-            schemaGroup(
-                "network", "网络",
-                schemaField("listen", "监听地址", "text", "0.0.0.0:8080", help = "修改后需要重启生效"),
-                schemaField("proxy", "出站代理", "text", "", placeholder = "http://127.0.0.1:7890"),
-                schemaField("timeout", "请求超时", "number", 60, unit = "秒"),
-                schemaField(
-                    "allowedOrigins", "跨域来源", "tags", listOf("http://localhost:5173"),
-                    help = "留空表示只允许同源",
-                    placeholder = "https://panel.example.com",
-                ),
-            ),
-            schemaGroup(
-                "log", "日志",
-                schemaField(
-                    "level", "日志级别", "select", "info",
-                    options = listOf("debug" to "debug", "info" to "info", "warn" to "warn", "error" to "error"),
-                ),
-                schemaField("retentionDays", "保留天数", "number", 14, unit = "天"),
-                schemaField("logBody", "记录请求体", "switch", false, help = "请求体可能包含密钥"),
-            ),
-            schemaGroup(
-                "security", "安全",
-                schemaField("maxAttempts", "登录失败锁定", "number", 5, unit = "次"),
-                schemaField(
-                    "allowRegister", "允许注册", "switch", false,
-                    help = "由环境变量 NEOAGENT_ALLOW_REGISTER 控制",
-                    disabled = true,
-                ),
-                schemaField(
-                    "trustProxy", "信任反向代理", "switch", true,
-                    help = "放在 Nginx 后面时打开，用于取真实 IP",
-                ),
-            ),
-        )
-
-        val settingValues: MutableMap<String, Any?> = mutableMapOf()
-        settingsDefs.forEach { group ->
-            schemaFields(group).forEach { field ->
-                settingValues[field["key"] as String] = field["default"]
-            }
-        }
+        // ---- 频道与系统设置：由配置对象 + YAML 提供 ----
 
         get("/api/settings") {
-            call.respondObj("groups" to settingsDefs.map { groupView(it, settingValues) })
+            call.respondObj("groups" to AppConfigs.system.sectionsView())
         }
 
         post("/api/settings") {
@@ -857,8 +507,39 @@ fun Routing.apiRoutes() {
             }
 
             val submitted = body["values"] as? JsonObject ?: JsonObject(emptyMap())
-            applyValues(settingValues, submitted, settingsDefs.flatMap { schemaFields(it) })
-            call.respondObj("groups" to settingsDefs.map { groupView(it, settingValues) })
+            ConfigManager.batch {
+                AppConfigs.system.applyJson(submitted)
+            }
+
+            call.respondObj("groups" to AppConfigs.system.sectionsView())
+        }
+
+        get("/api/channels") {
+            call.respondObj("channels" to AppConfigs.channels.map { it.channelView() })
+        }
+
+        post("/api/channels") {
+            val body = runCatching { call.receive<JsonObject>() }.getOrNull()
+            if (body == null) {
+                call.respond(HttpStatusCode.BadRequest, errorBody("请求体不是合法的 JSON"))
+                return@post
+            }
+
+            val submitted = body["values"] as? JsonObject ?: JsonObject(emptyMap())
+
+            ConfigManager.batch {
+                for ((channelId, payload) in submitted) {
+                    val channel = AppConfigs.channels.firstOrNull { it.id == channelId } ?: continue
+                    val incoming = payload as? JsonObject ?: continue
+
+                    (incoming["enabled"] as? JsonPrimitive)?.let { element ->
+                        channel.enabled = element.booleanOrNull ?: false
+                    }
+                    channel.applyJson(incoming)
+                }
+            }
+
+            call.respondObj("channels" to AppConfigs.channels.map { it.channelView() })
         }
 
         // todo: agents monitor api
