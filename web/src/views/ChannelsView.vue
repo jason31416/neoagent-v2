@@ -157,21 +157,27 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 animate-fade-in flex-col">
-    <header class="flex shrink-0 items-end justify-between gap-6">
-      <h1 class="text-[26px] font-semibold leading-tight tracking-tight text-slate-900">频道</h1>
-
-      <div class="flex items-center gap-1.5">
+  <div class="flex min-h-0 animate-fade-in flex-col lg:h-full">
+    <header class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <div class="flex min-w-0 flex-1 items-baseline gap-3">
+        <h1
+          class="min-w-0 truncate text-[22px] font-semibold leading-tight tracking-tight text-slate-900 sm:text-[26px]"
+        >
+          频道
+        </h1>
         <span
-          class="mr-1 text-[12px] text-emerald-600 transition-opacity duration-150"
+          class="shrink-0 text-[12px] text-emerald-600 transition-opacity duration-150"
           :class="saved ? 'opacity-100' : 'opacity-0'"
           :aria-hidden="!saved"
         >
           已保存
         </span>
+      </div>
+
+      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-1.5">
         <button
           type="button"
-          class="press flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12.5px] text-slate-500 hover:bg-panel hover:text-slate-800 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+          class="press flex h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-[12.5px] text-slate-500 hover:bg-panel hover:text-slate-800 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 sm:h-9"
           :disabled="!dirty || saving"
           @click="undo"
         >
@@ -180,7 +186,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="press flex h-9 items-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
+          class="press flex h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800 sm:h-9"
           :disabled="!dirty || saving"
           @click="save"
         >
@@ -202,24 +208,31 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
 
-    <div class="mt-8 flex min-h-0 flex-1 gap-10">
-      <aside class="scroll-thin flex w-49 shrink-0 flex-col overflow-y-auto px-1 pt-1">
-        <div v-if="loading" class="space-y-2">
-          <div v-for="index in 5" :key="index" class="h-9 animate-pulse rounded-lg bg-panel"></div>
+    <div class="mt-6 flex min-h-0 flex-col gap-4 lg:mt-8 lg:flex-1 lg:flex-row lg:gap-10">
+      <aside class="scroll-thin flex w-full shrink-0 flex-col px-1 pt-1 lg:w-49 lg:overflow-y-auto">
+        <div v-if="loading" class="flex gap-1.5 lg:block lg:space-y-2">
+          <div
+            v-for="index in 5"
+            :key="index"
+            class="h-10 w-24 shrink-0 animate-pulse rounded-lg bg-panel lg:h-9 lg:w-full"
+          ></div>
         </div>
 
-        <nav v-else class="space-y-0.5">
+        <nav
+          v-else
+          class="scrollbar-none flex gap-1.5 overflow-x-auto lg:block lg:space-y-0.5 lg:overflow-x-visible"
+        >
           <button
             v-for="channel in channels"
             :key="channel.id"
             type="button"
-            class="relative flex w-full items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-left transition-colors duration-150"
+            class="relative flex w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-left transition-colors duration-150 lg:w-full lg:py-2 lg:whitespace-normal"
             :class="activeId === channel.id ? 'bg-brand-50' : 'text-slate-600 hover:bg-panel/70'"
             @click="activeId = channel.id"
           >
             <span
               v-if="activeId === channel.id"
-              class="absolute left-0 top-1/2 h-4 w-0.75 -translate-y-1/2 rounded-full bg-brand-400 ml-1"
+              class="absolute left-0 top-1/2 ml-1 hidden h-4 w-0.75 -translate-y-1/2 rounded-full bg-brand-400 lg:block"
             ></span>
             <span class="flex w-3.5 shrink-0 items-center justify-center">
               <span
@@ -229,7 +242,7 @@ onBeforeUnmount(() => {
               ></span>
             </span>
             <span
-              class="min-w-0 flex-1 truncate text-[13px]"
+              class="min-w-0 truncate text-[13px] lg:flex-1"
               :class="activeId === channel.id ? 'font-medium text-brand-800' : ''"
             >
               {{ channel.name }}
@@ -249,7 +262,7 @@ onBeforeUnmount(() => {
         </nav>
       </aside>
 
-      <section class="scroll-thin min-w-0 flex-1 overflow-y-auto pb-6 pr-1">
+      <section class="scroll-thin min-w-0 pb-6 lg:flex-1 lg:overflow-y-auto lg:pr-1">
         <div v-if="loading" class="space-y-4">
           <div class="h-8 w-40 animate-pulse rounded-lg bg-panel"></div>
           <div class="h-64 animate-pulse rounded-2xl bg-panel"></div>
@@ -282,9 +295,11 @@ onBeforeUnmount(() => {
         </div>
 
         <template v-else>
-          <div class="flex items-start justify-between gap-6">
+          <div class="flex flex-wrap items-start justify-between gap-3 sm:gap-6">
             <div class="flex min-w-0 items-center gap-2.5">
-              <h2 class="truncate text-[21px] font-semibold tracking-tight text-slate-900">
+              <h2
+                class="truncate text-[18px] font-semibold tracking-tight text-slate-900 sm:text-[21px]"
+              >
                 {{ active.name }}
               </h2>
               <span
@@ -306,17 +321,13 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="mt-5 space-y-4">
-            <section
-              v-for="group in active.groups"
-              :key="group.id"
-              class="overflow-hidden rounded-2xl"
-            >
-              <div class="flex items-center gap-2 px-6 pt-4 pb-1">
+            <section v-for="group in active.groups" :key="group.id" class="rounded-2xl">
+              <div class="flex items-center gap-2 px-4 pt-4 pb-1 sm:px-6">
                 <span class="h-4 w-1 shrink-0 rounded-full bg-brand-400"></span>
                 <h3 class="text-[13px] font-semibold text-brand-800">{{ group.title }}</h3>
               </div>
 
-              <div class="px-6 pb-2">
+              <div class="px-4 pb-2 sm:px-6">
                 <SchemaField
                   v-for="field in group.fields"
                   :key="field.key"

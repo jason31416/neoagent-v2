@@ -112,7 +112,7 @@ async function submit() {
         autocomplete="current-password"
         :aria-invalid="error !== null"
         placeholder="请输入密码"
-        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none sm:text-sm transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
         :disabled="submitting"
       />
 

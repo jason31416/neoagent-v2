@@ -198,7 +198,7 @@ onBeforeUnmount(() => {
           role="option"
           :aria-selected="option.value === modelValue"
           :data-active="index === activeIndex"
-          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors duration-100"
+          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2.5 text-left text-[13px] transition-colors duration-100 sm:py-2"
           :class="[
             index === activeIndex ? 'bg-panel' : '',
             option.value === modelValue ? 'text-brand-800' : 'text-slate-600',

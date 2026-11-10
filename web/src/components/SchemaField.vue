@@ -82,9 +82,17 @@ async function copyValue() {
 </script>
 
 <template>
-  <div class="grid grid-cols-[190px_minmax(0,1fr)] items-start gap-x-8 gap-y-2 py-3.5">
+  <!-- 输入框类控件窄屏上下排；switch 一直是「左标签右开关」，宽屏统一回到 190px 标签列。 -->
+  <div
+    class="grid items-start gap-y-1.5 py-3.5 lg:grid-cols-[190px_minmax(0,1fr)] lg:gap-x-8 lg:gap-y-2"
+    :class="
+      field.type === 'switch'
+        ? 'grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 lg:items-start'
+        : 'grid-cols-1'
+    "
+  >
     <div>
-      <label class="flex h-9 items-center gap-1 text-[13px] text-slate-700">
+      <label class="flex min-h-8 items-center gap-1 text-[13px] text-slate-700 md:h-9">
         {{ field.label }}<span v-if="field.required" class="text-red-400">*</span>
       </label>
       <p v-if="field.help" class="mt-1 text-[11.5px] leading-relaxed text-slate-400">
@@ -92,21 +100,18 @@ async function copyValue() {
       </p>
     </div>
 
-    <div class="flex min-w-0 justify-end">
+    <div class="flex min-w-0 lg:justify-end">
       <textarea
         v-if="field.type === 'textarea'"
         :value="textValue"
         rows="3"
         :disabled="field.disabled"
         :placeholder="field.placeholder ?? undefined"
-        class="w-full max-w-[480px] resize-none rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 disabled:cursor-not-allowed disabled:bg-panel disabled:text-slate-400"
+        class="w-full resize-none rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 disabled:cursor-not-allowed disabled:bg-panel disabled:text-slate-400 md:max-w-120"
         @input="update(($event.target as HTMLTextAreaElement).value)"
       ></textarea>
 
-      <div
-        v-else-if="field.type === 'secret'"
-        class="flex w-full max-w-95 items-center gap-2"
-      >
+      <div v-else-if="field.type === 'secret'" class="flex w-full items-center gap-2 md:max-w-95">
         <template v-if="replacing">
           <input
             :value="secretDraft"
@@ -114,12 +119,12 @@ async function copyValue() {
             autocomplete="off"
             spellcheck="false"
             placeholder="输入新的密钥"
-            class="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 font-mono text-[12px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+            class="h-11 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 font-mono text-[12px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 md:h-9"
             @input="onSecretInput"
           />
           <button
             type="button"
-            class="shrink-0 text-[12px] text-slate-400 transition-colors hover:text-slate-600"
+            class="h-11 shrink-0 px-2 text-[12px] text-slate-400 transition-colors hover:text-slate-600 md:h-9"
             @click="cancelReplace"
           >
             取消
@@ -127,14 +132,14 @@ async function copyValue() {
         </template>
         <template v-else>
           <div
-            class="flex h-9 min-w-0 flex-1 items-center rounded-lg border border-slate-200 bg-white px-3"
+            class="flex h-11 min-w-0 flex-1 items-center rounded-lg border border-slate-200 bg-white px-3 md:h-9"
           >
             <span class="truncate font-mono text-[12px] text-slate-500">{{ modelValue }}</span>
           </div>
           <button
             v-if="!field.disabled"
             type="button"
-            class="press h-9 shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] text-slate-600 hover:bg-panel"
+            class="press h-11 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-[12px] text-slate-600 hover:bg-panel md:h-9 md:px-2.5"
             @click="startReplace"
           >
             替换
@@ -144,16 +149,16 @@ async function copyValue() {
 
       <div
         v-else-if="field.type === 'readonly'"
-        class="flex w-full max-w-[420px] items-center gap-2"
+        class="flex w-full items-center gap-2 md:max-w-105"
       >
         <div
-          class="flex h-9 min-w-0 flex-1 items-center rounded-lg border border-dashed border-slate-200 bg-panel/60 px-3"
+          class="flex h-11 min-w-0 flex-1 items-center rounded-lg border border-dashed border-slate-200 bg-panel/60 px-3 md:h-9"
         >
           <span class="truncate font-mono text-[12px] text-slate-500">{{ modelValue }}</span>
         </div>
         <button
           type="button"
-          class="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:bg-panel hover:text-slate-600"
+          class="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:bg-panel hover:text-slate-600 md:h-9 md:w-9"
           title="复制"
           @click="copyValue"
         >
@@ -161,7 +166,10 @@ async function copyValue() {
         </button>
       </div>
 
-      <div v-else-if="field.type === 'switch'" class="flex h-9 items-center">
+      <div
+        v-else-if="field.type === 'switch'"
+        class="flex min-h-11 items-center justify-end md:h-9"
+      >
         <ToggleSwitch
           :model-value="modelValue === true"
           :disabled="field.disabled"
@@ -170,7 +178,7 @@ async function copyValue() {
         />
       </div>
 
-      <div v-else-if="field.type === 'select'" class="w-full max-w-[220px]">
+      <div v-else-if="field.type === 'select'" class="w-full md:max-w-55">
         <SelectField
           :model-value="String(modelValue ?? '')"
           :options="field.options ?? []"
@@ -180,7 +188,7 @@ async function copyValue() {
         />
       </div>
 
-      <div v-else-if="field.type === 'tags'" class="max-w-[420px]">
+      <div v-else-if="field.type === 'tags'" class="w-full md:max-w-105">
         <div class="flex flex-wrap items-center gap-1.5">
           <span
             v-for="tag in tagList"
@@ -200,12 +208,12 @@ async function copyValue() {
             <input
               v-model="draftTag"
               :placeholder="tagList.length ? '添加' : (field.placeholder ?? undefined)"
-              class="h-7 w-24 rounded-md border border-dashed border-slate-200 bg-transparent px-1.5 text-[11.5px] text-slate-700 outline-none transition-colors placeholder:text-slate-300 focus:border-brand-400"
+              class="h-9 w-24 rounded-md border border-dashed border-slate-200 bg-transparent px-1.5 text-[11.5px] text-slate-700 outline-none transition-colors placeholder:text-slate-300 focus:border-brand-400 md:h-7"
               @keydown.enter.prevent="addTag"
             />
             <button
               type="button"
-              class="grid h-7 w-7 place-items-center rounded-md text-slate-300 transition-colors hover:bg-panel hover:text-slate-500"
+              class="grid h-9 w-9 place-items-center rounded-md text-slate-300 transition-colors hover:bg-panel hover:text-slate-500 md:h-7 md:w-7"
               @click="addTag"
             >
               <Plus :size="12" />
@@ -214,7 +222,7 @@ async function copyValue() {
         </div>
       </div>
 
-      <div v-else-if="field.type === 'number'" class="w-full max-w-[150px]">
+      <div v-else-if="field.type === 'number'" class="w-full md:max-w-37.5">
         <span class="relative block">
           <input
             :value="numberText"
@@ -222,7 +230,7 @@ async function copyValue() {
             inputmode="numeric"
             :disabled="field.disabled"
             :placeholder="field.placeholder ?? undefined"
-            class="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] tabular-nums text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 disabled:cursor-not-allowed disabled:bg-panel disabled:text-slate-400"
+            class="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] tabular-nums text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 disabled:cursor-not-allowed disabled:bg-panel disabled:text-slate-400 md:h-9"
             @input="onNumberInput"
           />
           <span
@@ -240,7 +248,7 @@ async function copyValue() {
         type="text"
         :disabled="field.disabled"
         :placeholder="field.placeholder ?? undefined"
-        class="h-9 w-full max-w-[380px] rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 disabled:cursor-not-allowed disabled:bg-panel disabled:text-slate-400"
+        class="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 disabled:cursor-not-allowed disabled:bg-panel disabled:text-slate-400 md:h-9 md:max-w-95"
         @input="update(($event.target as HTMLInputElement).value)"
       />
     </div>

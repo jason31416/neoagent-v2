@@ -579,8 +579,16 @@ async function openPull() {
 function measurePullList(): number | null {
   const el = pullListEl.value
   if (!el) return null
-  const max = Math.min(420, Math.round(window.innerHeight * 0.52))
-  return Math.round(Math.min(Math.max(el.scrollHeight, 160), max))
+  // 窄屏弹窗贴底展开，列表要留出更多高度给标题、搜索栏和底部按钮。
+  const compact = window.matchMedia('(max-width: 639px)').matches
+  const min = compact ? 120 : 160
+  const max = Math.max(
+    min,
+    compact
+      ? Math.round(window.innerHeight * 0.42)
+      : Math.min(420, Math.round(window.innerHeight * 0.52)),
+  )
+  return Math.round(Math.min(Math.max(el.scrollHeight, min), max))
 }
 
 // 搜索框是条件渲染的，挂载出来就直接聚焦，打开后可以立刻敲字。
@@ -683,14 +691,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="animate-fade-in">
-    <header class="flex items-end justify-between gap-6">
-      <div>
-        <h1 class="text-[28px] font-semibold leading-tight tracking-tight text-slate-900">模型提供商</h1>
+    <header class="flex flex-wrap items-end justify-between gap-4">
+      <div class="min-w-0">
+        <h1 class="text-[22px] font-semibold leading-tight tracking-tight text-slate-900 sm:text-[28px]">模型提供商</h1>
       </div>
 
       <button
         type="button"
-        class="press flex h-10 items-center gap-1.5 rounded-xl bg-brand-300 px-4 text-[13px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
+        class="press flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-brand-300 px-4 text-[13px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
         :disabled="loading"
         @click="startNew"
       >
@@ -733,14 +741,17 @@ onBeforeUnmount(() => {
 
     <template v-else-if="hasDraft">
       <!-- 提供商标签页 -->
-      <div v-if="providers.length || isNew" class="relative mt-10 border-b border-hairline">
-        <div ref="tabsEl" class="scrollbar-none relative flex items-center gap-8 overflow-x-auto">
+      <div v-if="providers.length || isNew" class="relative mt-6 border-b border-hairline sm:mt-10">
+        <div
+          ref="tabsEl"
+          class="scrollbar-none relative flex items-center gap-5 overflow-x-auto sm:gap-8"
+        >
           <button
             v-for="provider in providers"
             :key="provider.id"
             type="button"
             :data-tab-active="activeId === provider.id"
-            class="shrink-0 whitespace-nowrap pb-3.5 text-[16px] transition-colors duration-150"
+            class="shrink-0 whitespace-nowrap pb-3 text-[14px] transition-colors duration-150 sm:pb-3.5 sm:text-[16px]"
             :class="
               activeId === provider.id
                 ? 'font-medium text-brand-800'
@@ -755,7 +766,7 @@ onBeforeUnmount(() => {
             v-if="isNew"
             type="button"
             :data-tab-active="isNew"
-            class="shrink-0 whitespace-nowrap pb-3.5 text-[16px] font-medium text-brand-800"
+            class="shrink-0 whitespace-nowrap pb-3 text-[14px] font-medium text-brand-800 sm:pb-3.5 sm:text-[16px]"
           >
             {{ draft.name.trim() || '新提供商' }}
           </button>
@@ -774,9 +785,9 @@ onBeforeUnmount(() => {
 
       <Transition name="tab" mode="out-in">
         <section :key="viewKey" class="mt-6">
-          <div class="flex items-center justify-between gap-8">
-            <div class="flex min-w-0 items-center gap-3">
-              <h2 class="truncate text-[21px] font-semibold tracking-tight text-slate-900">
+          <div class="flex flex-wrap items-center justify-between gap-3 sm:gap-8">
+            <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+              <h2 class="truncate text-[18px] font-semibold tracking-tight text-slate-900 sm:text-[21px]">
                 {{ draft.name.trim() || '新提供商' }}
               </h2>
               <span
@@ -785,14 +796,14 @@ onBeforeUnmount(() => {
               >
                 {{ statusMeta[draft.status].label }}
               </span>
-              <span v-if="draft.baseUrl" class="truncate font-mono text-[12px] text-slate-400">
+              <span v-if="draft.baseUrl" class="hidden min-w-0 truncate font-mono text-[12px] text-slate-400 sm:inline">
                 {{ draft.baseUrl }}
               </span>
             </div>
 
-            <div class="flex shrink-0 items-center gap-2">
+            <div class="flex w-full shrink-0 items-center gap-2 sm:w-auto">
               <span
-                class="w-10 text-right text-[12px] text-slate-400 transition-opacity duration-150"
+                class="w-10 shrink-0 text-right text-[12px] text-slate-400 transition-opacity duration-150"
                 :class="showSaved ? 'opacity-100' : 'opacity-0'"
                 :aria-hidden="!showSaved"
               >
@@ -801,7 +812,7 @@ onBeforeUnmount(() => {
 
               <button
                 type="button"
-                class="press flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-lg px-3.5 text-[12.5px] text-slate-600 hover:bg-panel hover:text-slate-900 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-600"
+                class="press flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-3.5 text-[12.5px] text-slate-600 hover:bg-panel hover:text-slate-900 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-600 sm:h-9 sm:min-w-[88px] sm:flex-none"
                 :disabled="isNew || testing || saving"
                 :title="isNew ? '保存后才能测试' : undefined"
                 @click="testConnection"
@@ -812,7 +823,7 @@ onBeforeUnmount(() => {
 
               <button
                 type="button"
-                class="press flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
+                class="press flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800 sm:h-9 sm:min-w-[88px] sm:flex-none"
                 :disabled="!dirty || saving"
                 @click="save"
               >
@@ -834,8 +845,8 @@ onBeforeUnmount(() => {
           </Transition>
 
           <!-- 连接 -->
-          <div class="mt-6 rounded-2xl bg-panel p-6">
-            <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+          <div class="mt-6 rounded-2xl bg-panel p-4 sm:p-6">
+            <div class="grid grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-4">
               <label class="block">
                 <span class="mb-1.5 block text-[12px] text-slate-500">名称</span>
                 <input
@@ -905,8 +916,8 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 模型 -->
-          <div class="mt-10">
-            <div class="mb-3.5 flex items-center justify-between">
+          <div class="mt-8 sm:mt-10">
+            <div class="mb-3.5 flex flex-wrap items-center justify-between gap-2">
               <h3 class="text-[14px] font-medium text-slate-800">
                 模型
                 <span class="ml-1 text-[12px] font-normal text-slate-400">{{
@@ -939,7 +950,7 @@ onBeforeUnmount(() => {
 
             <div
               v-if="draft.models.length"
-              class="divide-y divide-hairline overflow-hidden rounded-2xl bg-panel px-6"
+              class="divide-y divide-hairline overflow-hidden rounded-2xl bg-panel px-4 sm:px-6"
             >
               <div
                 v-for="model in draft.models"
@@ -955,21 +966,24 @@ onBeforeUnmount(() => {
                 <div class="-mx-1.5 overflow-hidden px-1.5">
                   <button
                     type="button"
-                    class="flex w-full items-center gap-3 py-4 text-left"
+                    class="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 py-4 text-left"
                     :aria-expanded="isExpanded(model.uid)"
                     @click="toggleModel(model.uid)"
                   >
                     <p
-                      class="font-mono text-[13.5px]"
+                      class="min-w-0 max-w-full truncate font-mono text-[13px] sm:text-[13.5px]"
                       :class="model.id ? 'text-slate-900' : 'text-slate-400'"
                     >
                       {{ model.id || '未命名模型' }}
                     </p>
-                    <p v-if="model.displayName" class="truncate text-[12px] text-slate-400">
+                    <p
+                      v-if="model.displayName"
+                      class="min-w-0 max-w-full truncate text-[12px] text-slate-400"
+                    >
                       {{ model.displayName }}
                     </p>
 
-                    <div class="ml-auto flex shrink-0 items-center gap-1.5">
+                    <div class="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
                       <span
                         v-if="model.contextLength > 0"
                         class="rounded bg-white px-2 py-1 text-[10.5px] text-slate-500"
@@ -997,7 +1011,7 @@ onBeforeUnmount(() => {
                   >
                     <div class="-mx-1.5 overflow-hidden px-1.5">
                       <div
-                        class="grid grid-cols-1 gap-5 border-t border-hairline pb-4 pt-5 transition-opacity duration-200 md:grid-cols-3"
+                        class="grid grid-cols-1 gap-4 border-t border-hairline pb-4 pt-5 transition-opacity duration-200 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3"
                         :class="isExpanded(model.uid) ? 'opacity-100' : 'opacity-0'"
                         :inert="!isExpanded(model.uid)"
                       >
@@ -1086,10 +1100,10 @@ onBeforeUnmount(() => {
                           </span>
                         </label>
 
-                        <div class="flex items-end justify-end">
+                        <div class="flex items-end justify-end sm:col-span-2 xl:col-span-1">
                           <button
                             type="button"
-                            class="pb-2.5 text-[12px] text-red-500 transition-colors hover:text-red-600"
+                            class="py-1 text-[12px] text-red-500 transition-colors hover:text-red-600"
                             @click="removeModel(model.uid)"
                           >
                             删除模型
@@ -1104,13 +1118,13 @@ onBeforeUnmount(() => {
 
             <div
               v-else
-              class="rounded-2xl bg-panel px-6 py-12 text-center text-[13px] text-slate-400"
+              class="rounded-2xl bg-panel px-4 py-10 text-center text-[13px] text-slate-400 sm:px-6 sm:py-12"
             >
               还没有模型，可以从提供商拉取或手动添加
             </div>
           </div>
 
-          <div v-if="!isNew" class="mt-10 flex justify-end">
+          <div v-if="!isNew" class="mt-8 flex justify-end sm:mt-10">
             <button
               type="button"
               class="text-[12px] text-red-500 transition-colors hover:text-red-600"
@@ -1126,7 +1140,7 @@ onBeforeUnmount(() => {
     <!-- 空状态 -->
     <div
       v-else-if="!loadError"
-      class="mt-10 flex flex-col items-center justify-center rounded-2xl bg-panel px-6 py-24 text-center"
+      class="mt-8 flex flex-col items-center justify-center rounded-2xl bg-panel px-4 py-16 text-center sm:mt-10 sm:px-6 sm:py-24"
     >
       <p class="text-[13px] text-slate-500">还没有配置任何提供商</p>
       <button
@@ -1144,13 +1158,15 @@ onBeforeUnmount(() => {
       <Transition name="dialog">
         <div
           v-if="pullOpen"
-          class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/20 px-6"
+          class="fixed inset-0 z-40 flex items-end justify-center bg-slate-900/20 sm:items-center sm:px-6"
           @click.self="pullOpen = false"
         >
           <div
-            class="dialog-panel flex max-h-[min(78vh,660px)] w-[560px] max-w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            class="dialog-panel flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[min(78vh,660px)] sm:w-140 sm:max-w-full sm:rounded-2xl"
           >
-            <div class="flex items-start justify-between gap-4 px-6 pb-4 pt-6">
+            <div
+              class="flex shrink-0 items-start justify-between gap-4 px-4 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-6"
+            >
               <div class="min-w-0">
                 <p class="truncate text-[15px] font-medium text-slate-900">
                   从 {{ draft.name.trim() || '提供商' }} 拉取模型
@@ -1173,7 +1189,7 @@ onBeforeUnmount(() => {
 
             <div
               v-if="!pullLoading && !pullError && remoteModels.length"
-              class="flex shrink-0 items-center gap-2 border-t border-hairline px-6 py-3"
+              class="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-3 sm:px-6"
             >
               <div class="relative min-w-0 flex-1">
                 <Search
@@ -1188,7 +1204,7 @@ onBeforeUnmount(() => {
                   spellcheck="false"
                   autocomplete="off"
                   placeholder="搜索模型 ID 或名称"
-                  class="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-8 text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                  class="h-11 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-8 text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 sm:h-9"
                 />
                 <button
                   v-if="pullQuery"
@@ -1203,7 +1219,7 @@ onBeforeUnmount(() => {
 
               <button
                 type="button"
-                class="press h-9 shrink-0 rounded-lg px-2.5 text-[12px] text-slate-500 hover:bg-panel hover:text-slate-700 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                class="press h-11 shrink-0 rounded-lg px-3 text-[12px] text-slate-500 hover:bg-panel hover:text-slate-700 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 sm:h-9 sm:px-2.5"
                 :disabled="pullSelectable.length === 0"
                 @click="toggleSelectAll"
               >
@@ -1214,21 +1230,21 @@ onBeforeUnmount(() => {
             <div class="relative min-h-0">
               <div
                 v-if="pullLoading"
-                class="border-t border-hairline px-6 py-14 text-center text-[12.5px] text-slate-400"
+                class="border-t border-hairline px-4 py-10 text-center text-[12.5px] text-slate-400 sm:px-6 sm:py-14"
               >
                 正在读取模型列表…
               </div>
 
               <div
                 v-else-if="pullError"
-                class="border-t border-hairline px-6 py-12 text-center text-[12.5px] leading-relaxed text-red-600"
+                class="border-t border-hairline px-4 py-10 text-center text-[12.5px] leading-relaxed text-red-600 sm:px-6 sm:py-12"
               >
                 {{ pullError }}
               </div>
 
               <div
                 v-else-if="remoteModels.length === 0"
-                class="border-t border-hairline px-6 py-14 text-center text-[12.5px] text-slate-400"
+                class="border-t border-hairline px-4 py-10 text-center text-[12.5px] text-slate-400 sm:px-6 sm:py-14"
               >
                 没有可导入的模型
               </div>
@@ -1241,7 +1257,7 @@ onBeforeUnmount(() => {
               >
                 <div
                   v-if="filteredRemote.length === 0"
-                  class="flex h-full items-center justify-center px-6 text-center text-[12.5px] leading-relaxed text-slate-400"
+                  class="flex h-full items-center justify-center px-4 text-center text-[12.5px] leading-relaxed text-slate-400 sm:px-6"
                 >
                   没有匹配「{{ pullQuery.trim() }}」的模型
                 </div>
@@ -1251,7 +1267,7 @@ onBeforeUnmount(() => {
                     v-for="remote in filteredRemote"
                     :key="remote.id"
                     type="button"
-                    class="remote-row flex w-full items-center gap-3 border-b border-hairline px-6 py-2.5 text-left last:border-b-0"
+                    class="remote-row flex w-full items-center gap-3 border-b border-hairline px-4 py-3 text-left last:border-b-0 sm:px-6 sm:py-2.5"
                     :class="isAdded(remote.id) ? 'cursor-default' : 'hover:bg-panel/60'"
                     :disabled="isAdded(remote.id)"
                     @click="toggleRemote(remote.id)"
@@ -1283,7 +1299,7 @@ onBeforeUnmount(() => {
 
                     <span
                       v-if="remote.displayName && remote.displayName !== remote.id"
-                      class="hidden shrink-0 truncate text-[11px] text-slate-400 sm:block sm:max-w-[140px]"
+                      class="hidden shrink-0 truncate text-[11px] text-slate-400 sm:block sm:max-w-35"
                     >
                       {{ remote.displayName }}
                     </span>
@@ -1297,7 +1313,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div
-              class="flex shrink-0 items-center justify-between border-t border-hairline px-6 py-4"
+              class="pb-safe flex flex-wrap shrink-0 items-center justify-between gap-2 border-t border-hairline px-4 py-3 sm:px-6 sm:py-4"
             >
               <p class="text-[11px] text-slate-400">
                 已选择 {{ pullSelected.length }} 个
@@ -1308,14 +1324,14 @@ onBeforeUnmount(() => {
               <div class="flex items-center gap-1.5">
                 <button
                   type="button"
-                  class="press rounded-lg px-3.5 py-2 text-[12px] text-slate-500 hover:bg-panel hover:text-slate-700"
+                  class="press rounded-lg px-3.5 py-2.5 text-[12px] text-slate-500 hover:bg-panel hover:text-slate-700 sm:py-2"
                   @click="pullOpen = false"
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  class="press rounded-lg bg-brand-300 px-4 py-2 text-[12px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
+                  class="press rounded-lg bg-brand-300 px-4 py-2.5 text-[12px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800 sm:py-2"
                   :disabled="pullSelected.length === 0"
                   @click="importSelected"
                 >

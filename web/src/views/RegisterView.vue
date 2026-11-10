@@ -94,7 +94,7 @@ async function submit() {
         autocomplete="new-password"
         placeholder="至少 6 位"
         :aria-invalid="tooShort"
-        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none sm:text-sm transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
         :class="tooShort ? 'border-red-300' : ''"
         :disabled="submitting"
       />
@@ -106,7 +106,7 @@ async function submit() {
         type="password"
         autocomplete="new-password"
         placeholder="再输入一次"
-        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none sm:text-sm transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
         :disabled="submitting"
       />
 

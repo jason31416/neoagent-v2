@@ -135,15 +135,27 @@ function releaseSpy() {
   spyLocked = false
 }
 
-function goTo(id: string) {
+/**
+ * 宽屏由右侧面板自己滚动，窄屏取消了嵌套滚动、改用外层 main。
+ * 根据计算后的 overflow 选真正的滚动容器，跳转和高亮才能两边都对得上。
+ */
+function scrollHost(): HTMLElement | null {
   const pane = paneEl.value
+  if (!pane) return null
+  const overflowY = window.getComputedStyle(pane).overflowY
+  if (overflowY === 'auto' || overflowY === 'scroll') return pane
+  return pane.closest('main')
+}
+
+function goTo(id: string) {
+  const scroller = scrollHost()
   const element = sectionElement(id)
   activeSection.value = id
-  if (!pane || !element) return
+  if (!scroller || !element) return
 
   /*
-   * 只滚动右侧内容区：scrollIntoView 会连带滚动外层页面，
-   * 让左侧分类在平滑滚动过程中跟着移动。
+   * 只滚动内容区：scrollIntoView 会连带滚动外层页面，
+   * 让分类导航在平滑滚动过程中跟着移动。
    * 滚动期间 scroll 事件的反向高亮会经过中间分组，先锁住避免来回闪动。
    */
   spyLocked = true
@@ -152,24 +164,27 @@ function goTo(id: string) {
 
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const top =
-    element.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop - 8
-  pane.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
+    element.getBoundingClientRect().top -
+    scroller.getBoundingClientRect().top +
+    scroller.scrollTop -
+    8
+  scroller.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
 }
 
-/** 内容区滚动时同步左侧高亮，不用额外引 IntersectionObserver。 */
+/** 内容区滚动时同步分类高亮，不用额外引 IntersectionObserver。 */
 function onPaneScroll() {
   if (spyLocked) return
-  const pane = paneEl.value
-  if (!pane) return
-  const line = pane.getBoundingClientRect().top + 56
+  const scroller = scrollHost()
+  if (!scroller) return
+  const line = scroller.getBoundingClientRect().top + 56
   let current = groups.value[0]?.id ?? ''
   for (const group of groups.value) {
     const element = sectionElement(group.id)
     if (element && element.getBoundingClientRect().top <= line) current = group.id
   }
   // 最后一组内容不够滚到判定线时，滚到底就认为它是当前分组。
-  const scrollable = pane.scrollHeight > pane.clientHeight + 1
-  if (scrollable && pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1) {
+  const scrollable = scroller.scrollHeight > scroller.clientHeight + 1
+  if (scrollable && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) {
     current = groups.value[groups.value.length - 1]?.id ?? current
   }
   activeSection.value = current
@@ -198,37 +213,46 @@ onBeforeRouteLeave(async () => {
   })
 })
 
+let outerScrollEl: HTMLElement | null = null
+
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   window.addEventListener('keydown', handleKeydown)
+  outerScrollEl = paneEl.value?.closest('main') ?? null
+  outerScrollEl?.addEventListener('scroll', onPaneScroll, { passive: true })
   void load().then(() => nextTick(onPaneScroll))
 })
 
 onBeforeUnmount(() => {
   window.clearTimeout(unlockTimer)
+  outerScrollEl?.removeEventListener('scroll', onPaneScroll)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 animate-fade-in flex-col">
-    <header class="flex shrink-0 items-end justify-between gap-6">
-      <h1 class="text-[26px] font-semibold leading-tight tracking-tight text-slate-900">
-        系统设置
-      </h1>
-
-      <div class="flex items-center gap-1.5">
+  <div class="flex min-h-0 animate-fade-in flex-col lg:h-full">
+    <header class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+      <div class="flex min-w-0 flex-1 items-baseline gap-3">
+        <h1
+          class="min-w-0 truncate text-[22px] font-semibold leading-tight tracking-tight text-slate-900 sm:text-[26px]"
+        >
+          系统设置
+        </h1>
         <span
-          class="mr-1 text-[12px] text-emerald-600 transition-opacity duration-150"
+          class="shrink-0 text-[12px] text-emerald-600 transition-opacity duration-150"
           :class="saved ? 'opacity-100' : 'opacity-0'"
           :aria-hidden="!saved"
         >
           已保存
         </span>
+      </div>
+
+      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-1.5">
         <button
           type="button"
-          class="press flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12.5px] text-slate-500 hover:bg-panel hover:text-slate-800 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+          class="press flex h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-[12.5px] text-slate-500 hover:bg-panel hover:text-slate-800 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 sm:h-9"
           :disabled="!dirty || saving"
           @click="undo"
         >
@@ -237,7 +261,7 @@ onBeforeUnmount(() => {
         </button>
         <button
           type="button"
-          class="press flex h-9 items-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
+          class="press flex h-11 items-center justify-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800 sm:h-9"
           :disabled="!dirty || saving"
           @click="save"
         >
@@ -259,8 +283,10 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
 
-    <div class="mt-8 flex min-h-0 flex-1 gap-10">
-      <aside class="scroll-thin flex w-49 shrink-0 flex-col overflow-y-auto px-1 pt-1">
+    <div class="mt-6 flex min-h-0 flex-col gap-4 lg:mt-8 lg:flex-1 lg:flex-row lg:gap-10">
+      <aside
+        class="scroll-thin flex w-full shrink-0 flex-col gap-2 px-1 pt-1 lg:w-49 lg:gap-0 lg:overflow-y-auto"
+      >
         <div class="relative shrink-0">
           <Search
             :size="12"
@@ -272,22 +298,25 @@ onBeforeUnmount(() => {
             type="text"
             placeholder="搜索"
             spellcheck="false"
-            class="h-8 w-full rounded-lg bg-panel pl-7 pr-2.5 text-[12px] text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:ring-4 focus:ring-brand-300/25"
+            class="h-10 w-full rounded-lg bg-panel pl-7 pr-2.5 text-[12px] text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:ring-4 focus:ring-brand-300/25 lg:h-8"
           />
         </div>
 
-        <nav v-if="!loading" class="mt-3 space-y-0.5">
+        <nav
+          v-if="!loading"
+          class="scrollbar-none flex gap-1.5 overflow-x-auto lg:mt-3 lg:block lg:space-y-0.5 lg:overflow-x-visible"
+        >
           <button
             v-for="group in groups"
             :key="group.id"
             type="button"
-            class="relative flex w-full items-center gap-2 rounded-lg py-2 pl-3 pr-2 text-left transition-colors duration-150"
+            class="relative flex w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-left transition-colors duration-150 lg:w-full lg:py-2 lg:whitespace-normal"
             :class="activeSection === group.id ? 'bg-brand-50' : 'text-slate-600 hover:bg-panel/70'"
             @click="goTo(group.id)"
           >
             <span
               v-if="activeSection === group.id"
-              class="absolute left-0 top-1/2 h-4 w-0.75 -translate-y-1/2 rounded-full bg-brand-400 ml-1"
+              class="absolute left-0 top-1/2 ml-1 hidden h-4 w-0.75 -translate-y-1/2 rounded-full bg-brand-400 lg:block"
             ></span>
             <component
               :is="groupIcons[group.id] ?? null"
@@ -296,7 +325,7 @@ onBeforeUnmount(() => {
               :class="activeSection === group.id ? 'text-brand-500' : 'text-slate-400'"
             />
             <span
-              class="flex-1 text-[13px]"
+              class="text-[13px] lg:flex-1"
               :class="activeSection === group.id ? 'font-medium text-brand-800' : ''"
             >
               {{ group.title }}
@@ -307,7 +336,7 @@ onBeforeUnmount(() => {
 
       <section
         ref="paneEl"
-        class="scroll-thin min-w-0 flex-1 overflow-y-auto pb-6 pr-1"
+        class="scroll-thin min-w-0 pb-6 lg:flex-1 lg:overflow-y-auto lg:pr-1"
         @scroll.passive="onPaneScroll"
         @scrollend="releaseSpy"
         @wheel.passive="releaseSpy"
@@ -349,14 +378,14 @@ onBeforeUnmount(() => {
             v-for="group in visibleGroups"
             :id="`settings-${group.id}`"
             :key="group.id"
-            class="scroll-mt-2 overflow-hidden rounded-2xl"
+            class="scroll-mt-2 rounded-2xl"
           >
-            <div class="flex items-center gap-2 px-6 pt-4 pb-1">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-1 sm:px-6">
               <span class="h-4 w-1 shrink-0 rounded-full bg-brand-400"></span>
               <h2 class="text-[13px] font-semibold text-brand-800">{{ group.title }}</h2>
             </div>
 
-            <div class="px-6 pb-2">
+            <div class="px-4 pb-2 sm:px-6">
               <SchemaField
                 v-for="field in group.fields"
                 :key="field.key"
