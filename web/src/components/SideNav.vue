@@ -37,10 +37,7 @@ function handleSignOut() {
     class="sticky top-0 flex h-screen w-67 shrink-0 flex-col border-r border-hairline bg-white"
   >
     <div class="flex items-center gap-2.5 px-5 py-5">
-      <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-300 text-brand-600">
-        <Bot :size="18" :stroke-width="2.3" />
-      </span>
-      <span class="text-[16px] font-semibold text-slate-800">NeoAgent</span>
+      <span class="text-[18px] tracking-wide text-slate-500"><span class="font-semibold tracking-normal text-slate-700">NeoAgent</span> WebUI</span>
     </div>
 
     <nav class="flex-1 overflow-y-auto px-3">

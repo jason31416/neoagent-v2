@@ -60,7 +60,7 @@ async function submit() {
 </script>
 
 <template>
-  <AuthShell title="设置面板密码" subtitle="">
+  <AuthShell title="设置面板密码">
     <template v-if="!secret">
       <div class="flex items-start gap-2.5 rounded-xl bg-amber-50 p-3.5 text-amber-800">
         <AlertTriangle :size="16" class="mt-0.5 shrink-0" />
@@ -94,19 +94,19 @@ async function submit() {
         autocomplete="new-password"
         placeholder="至少 6 位"
         :aria-invalid="tooShort"
-        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 disabled:bg-slate-50"
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
         :class="tooShort ? 'border-red-300' : ''"
         :disabled="submitting"
       />
 
-      <label for="confirm" class="mt-5 block text-xs font-medium text-slate-600">确认密码</label>
+      <label for="confirm" class="mt-5 block text-[13px] font-medium text-slate-600">确认密码</label>
       <input
         id="confirm"
         v-model="confirm"
         type="password"
         autocomplete="new-password"
         placeholder="再输入一次"
-        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 disabled:bg-slate-50"
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
         :disabled="submitting"
       />
 

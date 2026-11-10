@@ -122,6 +122,148 @@
   }
 }
 
+/* 模型页：标签内容、列表增删、弹窗和提示条的过渡。 */
+.tab-enter-active {
+  transition: opacity 160ms ease-out;
+}
+
+.tab-enter-from {
+  opacity: 0;
+}
+
+.tab-leave-active {
+  transition: opacity 90ms ease-in;
+}
+
+.tab-leave-to {
+  opacity: 0;
+}
+
+.dialog-enter-active,
+.dialog-leave-active {
+  transition: opacity 150ms ease;
+}
+
+.dialog-enter-from,
+.dialog-leave-to {
+  opacity: 0;
+}
+
+.dialog-enter-active .dialog-panel {
+  transition:
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dialog-enter-from .dialog-panel {
+  opacity: 0;
+  transform: translate3d(0, 6px, 0) scale(0.97);
+}
+
+.dialog-leave-active .dialog-panel {
+  transition:
+    opacity 120ms ease-in,
+    transform 120ms ease-in;
+}
+
+.dialog-leave-to .dialog-panel {
+  opacity: 0;
+  transform: translate3d(0, 4px, 0) scale(0.985);
+}
+
+.notice-enter-active,
+.notice-leave-active {
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.notice-enter-from,
+.notice-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0);
+}
+
+.press {
+  transition:
+    transform 90ms ease,
+    background-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease;
+}
+
+.press:active {
+  transform: scale(0.98);
+}
+
+/* 下拉菜单：从触发按钮下方轻轻落下。 */
+.menu-enter-active,
+.menu-leave-active {
+  transition:
+    opacity 120ms ease,
+    transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.menu-enter-from,
+.menu-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0) scale(0.985);
+}
+
+.menu-leave-active {
+  transition-duration: 90ms;
+}
+
+/*
+ * 细一点的滚动条：系统默认的那根在不同平台上差别很大，
+ * 这里统一成淡灰色圆角滑块，轨道透明。
+ */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #d6dbe3 transparent;
+  /* 滚到头也不把滚动传给页面。 */
+  overscroll-behavior: contain;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-color: #d6dbe3;
+  background-clip: padding-box;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background-color: #c2c9d4;
+  background-clip: padding-box;
+}
+
+.scroll-thin::-webkit-scrollbar-track,
+.scroll-thin::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 拉取列表动辄几百行，滚出视口的部分跳过排版，搜索时不至于卡。 */
+.remote-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 41px;
+}
+
+/* 提供商标签过多时横向滚动，不挤压已有标签。 */
+.scrollbar-none {
+  scrollbar-width: none;
+  /* 横向滑到头也不要把滚动传给页面。 */
+  overscroll-behavior-x: contain;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

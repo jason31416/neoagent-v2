@@ -48,3 +48,4 @@ bin/
 .DS_Store
 
 test_agent_log.md
+neoagent.db

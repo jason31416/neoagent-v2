@@ -42,6 +42,90 @@ export interface AuthResponse {
   token: string
 }
 
+export type ProviderStatus = 'connected' | 'untested' | 'error'
+
+export interface ProviderModel {
+  /** 模型 id，同时也是后端 model-id -> Model 表的 key，全局唯一。 */
+  id: string
+  displayName: string
+  /** 上下文窗口，单位 token。 */
+  contextLength: number
+  /** 图片输入的最大边长；-1 表示不支持图片。 */
+  maxImage: number
+}
+
+export interface ModelProvider {
+  id: string
+  name: string
+  /** 适配器类型：openai-compatible / deepseek / local。 */
+  type: string
+  baseUrl: string
+  status: ProviderStatus
+  apiKeySet: boolean
+  /** 服务端给的掩码，例如 sk-••••••••3f9a；没有密钥时为 null。 */
+  apiKeyPreview: string | null
+  models: ProviderModel[]
+}
+
+export interface ProviderInput {
+  name: string
+  type: string
+  baseUrl: string
+  /** 省略表示不修改，空字符串表示清除。 */
+  apiKey?: string
+  models: ProviderModel[]
+}
+
+export interface RemoteModel {
+  id: string
+  displayName: string
+  contextLength: number
+  maxImage: number
+}
+
+/** 配置项的控件类型；后端只下发类型，前端按类型渲染，不认识具体字段。 */
+export type SchemaFieldType =
+  'text' | 'secret' | 'number' | 'switch' | 'select' | 'tags' | 'textarea' | 'readonly'
+
+export type SchemaValue = string | number | boolean | string[] | null
+
+export interface SchemaOption {
+  value: string
+  label: string
+}
+
+export interface SchemaField {
+  key: string
+  label: string
+  type: SchemaFieldType
+  value: SchemaValue
+  help?: string | null
+  required?: boolean
+  unit?: string | null
+  placeholder?: string | null
+  options?: SchemaOption[] | null
+  /** 只读或由外部控制的项，仍然展示但不能改。 */
+  disabled?: boolean
+  /** 值是否已经过掩码处理（密钥只回显末四位）。 */
+  masked?: boolean
+}
+
+export interface SchemaGroup {
+  id: string
+  title: string
+  fields: SchemaField[]
+}
+
+export type ChannelStatus = 'running' | 'stopped' | 'error' | 'idle'
+
+export interface ChannelConfig {
+  id: string
+  name: string
+  enabled: boolean
+  status: ChannelStatus
+  groups: SchemaGroup[]
+}
+
 interface RequestOptions {
   method?: string
   body?: unknown
@@ -102,7 +186,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, describeStatus(response.status))
+    let message = describeStatus(response.status)
+    try {
+      const parsed = JSON.parse(await response.text()) as { error?: unknown }
+      if (typeof parsed.error === 'string' && parsed.error) message = parsed.error
+    } catch {
+      // 后端没给 JSON 就用状态码的通用说明。
+    }
+    throw new ApiError(response.status, message)
   }
 
   const text = await response.text()
@@ -125,4 +216,39 @@ export const api = {
     request<AuthResponse>('/api/auth/register', { method: 'POST', body: { secret, password } }),
 
   status: () => request<RuntimeStatus>('/api/status'),
+
+  models: () => request<{ providers: ModelProvider[] }>('/api/models'),
+
+  createProvider: (body: ProviderInput) =>
+    request<{ provider: ModelProvider }>('/api/models/providers', { method: 'POST', body }),
+
+  updateProvider: (id: string, body: ProviderInput) =>
+    request<{ provider: ModelProvider }>(`/api/models/providers/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body,
+    }),
+
+  deleteProvider: (id: string) =>
+    request<{ success: boolean }>(`/api/models/providers/${encodeURIComponent(id)}/delete`, {
+      method: 'POST',
+    }),
+
+  testProvider: (id: string) =>
+    request<{ provider: ModelProvider }>(`/api/models/providers/${encodeURIComponent(id)}/test`, {
+      method: 'POST',
+    }),
+
+  remoteModels: (id: string) =>
+    request<{ models: RemoteModel[] }>(`/api/models/providers/${encodeURIComponent(id)}/remote`),
+
+  channels: () => request<{ channels: ChannelConfig[] }>('/api/channels'),
+
+  /** 整页提交：只传改动过的频道也行，服务端按 key 合并。 */
+  saveChannels: (values: Record<string, Record<string, unknown>>) =>
+    request<{ channels: ChannelConfig[] }>('/api/channels', { method: 'POST', body: { values } }),
+
+  settings: () => request<{ groups: SchemaGroup[] }>('/api/settings'),
+
+  saveSettings: (values: Record<string, unknown>) =>
+    request<{ groups: SchemaGroup[] }>('/api/settings', { method: 'POST', body: { values } }),
 }

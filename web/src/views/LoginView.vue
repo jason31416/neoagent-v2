@@ -75,7 +75,7 @@ async function submit() {
 </script>
 
 <template>
-  <AuthShell title="欢迎回来" subtitle="">
+  <AuthShell title="欢迎回来">
     <div v-if="checking" class="animate-pulse space-y-4">
       <div class="h-10 w-full rounded-xl bg-slate-100" />
       <div class="h-10 w-full rounded-xl bg-slate-100" />
@@ -112,7 +112,7 @@ async function submit() {
         autocomplete="current-password"
         :aria-invalid="error !== null"
         placeholder="请输入密码"
-        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 disabled:bg-slate-50"
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition duration-150 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-300/10 disabled:bg-slate-50"
         :disabled="submitting"
       />
 
