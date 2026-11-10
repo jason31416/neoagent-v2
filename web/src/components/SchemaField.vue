@@ -82,11 +82,9 @@ async function copyValue() {
 </script>
 
 <template>
-  <div
-    class="grid grid-cols-1 items-start gap-x-8 gap-y-2 py-3.5 md:grid-cols-[190px_minmax(0,1fr)]"
-  >
-    <div class="md:pt-1">
-      <label class="flex items-baseline gap-1 text-[13px] text-slate-700">
+  <div class="grid grid-cols-[190px_minmax(0,1fr)] items-start gap-x-8 gap-y-2 py-3.5">
+    <div>
+      <label class="flex h-9 items-center gap-1 text-[13px] text-slate-700">
         {{ field.label }}<span v-if="field.required" class="text-red-400">*</span>
       </label>
       <p v-if="field.help" class="mt-1 text-[11.5px] leading-relaxed text-slate-400">
@@ -94,7 +92,7 @@ async function copyValue() {
       </p>
     </div>
 
-    <div class="min-w-0">
+    <div class="flex min-w-0 justify-end">
       <textarea
         v-if="field.type === 'textarea'"
         :value="textValue"
@@ -105,7 +103,10 @@ async function copyValue() {
         @input="update(($event.target as HTMLTextAreaElement).value)"
       ></textarea>
 
-      <div v-else-if="field.type === 'secret'" class="flex max-w-[380px] items-center gap-2">
+      <div
+        v-else-if="field.type === 'secret'"
+        class="flex w-full max-w-95 items-center gap-2"
+      >
         <template v-if="replacing">
           <input
             :value="secretDraft"
@@ -141,7 +142,10 @@ async function copyValue() {
         </template>
       </div>
 
-      <div v-else-if="field.type === 'readonly'" class="flex max-w-[420px] items-center gap-2">
+      <div
+        v-else-if="field.type === 'readonly'"
+        class="flex w-full max-w-[420px] items-center gap-2"
+      >
         <div
           class="flex h-9 min-w-0 flex-1 items-center rounded-lg border border-dashed border-slate-200 bg-panel/60 px-3"
         >
@@ -166,7 +170,7 @@ async function copyValue() {
         />
       </div>
 
-      <div v-else-if="field.type === 'select'" class="max-w-[220px]">
+      <div v-else-if="field.type === 'select'" class="w-full max-w-[220px]">
         <SelectField
           :model-value="String(modelValue ?? '')"
           :options="field.options ?? []"
@@ -210,7 +214,7 @@ async function copyValue() {
         </div>
       </div>
 
-      <div v-else-if="field.type === 'number'" class="max-w-[150px]">
+      <div v-else-if="field.type === 'number'" class="w-full max-w-[150px]">
         <span class="relative block">
           <input
             :value="numberText"

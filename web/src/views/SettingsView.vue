@@ -1,7 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { AlertTriangle, Loader2, Save, Search, Undo2 } from 'lucide-vue-next'
+import {
+  AlertTriangle,
+  Cpu,
+  Loader2,
+  Network,
+  Save,
+  ScrollText,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Undo2,
+} from 'lucide-vue-next'
 import { api, ApiError, type SchemaGroup, type SchemaValue } from '@/lib/api'
 import { useConfirm } from '@/lib/confirm'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -18,7 +29,18 @@ const query = ref('')
 const activeSection = ref('')
 const paneEl = ref<HTMLElement | null>(null)
 
+let spyLocked = false
+let unlockTimer: number | undefined
+
 const { confirmState, askConfirm, answerConfirm } = useConfirm()
+
+const groupIcons: Record<string, Component> = {
+  panel: Settings2,
+  runtime: Cpu,
+  network: Network,
+  log: ScrollText,
+  security: ShieldCheck,
+}
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -108,14 +130,35 @@ function sectionElement(id: string): HTMLElement | null {
   return document.getElementById(`settings-${id}`)
 }
 
+function releaseSpy() {
+  window.clearTimeout(unlockTimer)
+  spyLocked = false
+}
+
 function goTo(id: string) {
+  const pane = paneEl.value
+  const element = sectionElement(id)
   activeSection.value = id
+  if (!pane || !element) return
+
+  /*
+   * 只滚动右侧内容区：scrollIntoView 会连带滚动外层页面，
+   * 让左侧分类在平滑滚动过程中跟着移动。
+   * 滚动期间 scroll 事件的反向高亮会经过中间分组，先锁住避免来回闪动。
+   */
+  spyLocked = true
+  window.clearTimeout(unlockTimer)
+  unlockTimer = window.setTimeout(releaseSpy, 900)
+
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  sectionElement(id)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' })
+  const top =
+    element.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop - 8
+  pane.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' })
 }
 
 /** 内容区滚动时同步左侧高亮，不用额外引 IntersectionObserver。 */
 function onPaneScroll() {
+  if (spyLocked) return
   const pane = paneEl.value
   if (!pane) return
   const line = pane.getBoundingClientRect().top + 56
@@ -123,6 +166,11 @@ function onPaneScroll() {
   for (const group of groups.value) {
     const element = sectionElement(group.id)
     if (element && element.getBoundingClientRect().top <= line) current = group.id
+  }
+  // 最后一组内容不够滚到判定线时，滚到底就认为它是当前分组。
+  const scrollable = pane.scrollHeight > pane.clientHeight + 1
+  if (scrollable && pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1) {
+    current = groups.value[groups.value.length - 1]?.id ?? current
   }
   activeSection.value = current
 }
@@ -157,6 +205,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.clearTimeout(unlockTimer)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('keydown', handleKeydown)
 })
@@ -211,7 +260,7 @@ onBeforeUnmount(() => {
     </Transition>
 
     <div class="mt-8 flex min-h-0 flex-1 gap-10">
-      <aside class="scroll-thin flex w-[196px] shrink-0 flex-col overflow-y-auto pr-1">
+      <aside class="scroll-thin flex w-49 shrink-0 flex-col overflow-y-auto px-1 pt-1">
         <div class="relative shrink-0">
           <Search
             :size="12"
@@ -223,7 +272,7 @@ onBeforeUnmount(() => {
             type="text"
             placeholder="搜索"
             spellcheck="false"
-            class="h-8 w-full rounded-lg border border-slate-200 bg-white pl-7 pr-2.5 text-[12px] text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+            class="h-8 w-full rounded-lg bg-panel pl-7 pr-2.5 text-[12px] text-slate-800 outline-none transition duration-150 placeholder:text-slate-300 focus:ring-4 focus:ring-brand-300/25"
           />
         </div>
 
@@ -238,8 +287,14 @@ onBeforeUnmount(() => {
           >
             <span
               v-if="activeSection === group.id"
-              class="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-brand-400"
+              class="absolute left-0 top-1/2 h-4 w-0.75 -translate-y-1/2 rounded-full bg-brand-400 ml-1"
             ></span>
+            <component
+              :is="groupIcons[group.id] ?? null"
+              :size="14"
+              class="shrink-0"
+              :class="activeSection === group.id ? 'text-brand-500' : 'text-slate-400'"
+            />
             <span
               class="flex-1 text-[13px]"
               :class="activeSection === group.id ? 'font-medium text-brand-800' : ''"
@@ -254,6 +309,9 @@ onBeforeUnmount(() => {
         ref="paneEl"
         class="scroll-thin min-w-0 flex-1 overflow-y-auto pb-6 pr-1"
         @scroll.passive="onPaneScroll"
+        @scrollend="releaseSpy"
+        @wheel.passive="releaseSpy"
+        @touchstart.passive="releaseSpy"
       >
         <div v-if="loading" class="space-y-4">
           <div class="h-8 w-40 animate-pulse rounded-lg bg-panel"></div>
@@ -291,13 +349,14 @@ onBeforeUnmount(() => {
             v-for="group in visibleGroups"
             :id="`settings-${group.id}`"
             :key="group.id"
-            class="scroll-mt-2 overflow-hidden rounded-2xl border border-hairline bg-white"
+            class="scroll-mt-2 overflow-hidden rounded-2xl"
           >
-            <div class="border-b border-hairline bg-panel/40 px-6 py-2.5">
-              <h2 class="text-[12px] font-medium text-slate-500">{{ group.title }}</h2>
+            <div class="flex items-center gap-2 px-6 pt-4 pb-1">
+              <span class="h-4 w-1 shrink-0 rounded-full bg-brand-400"></span>
+              <h2 class="text-[13px] font-semibold text-brand-800">{{ group.title }}</h2>
             </div>
 
-            <div class="divide-y divide-hairline px-6">
+            <div class="px-6 pb-2">
               <SchemaField
                 v-for="field in group.fields"
                 :key="field.key"
