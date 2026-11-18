@@ -84,7 +84,7 @@ private fun createAgent(apiKey: String, scope: CoroutineScope): AgentLoop {
         id = "deepseek-flash",
         displayName = "DeepSeek Flash",
         modelProvider = provider,
-        capabilities = ModelCapability(maxImage = 600, contextLength = 10000),
+        capabilities = ModelCapability(contextLength = 10000),
     )
 
     // ToolRegistry 是个单例：注册进去之后只能按名字取，没有“列出全部”的接口。

@@ -123,7 +123,7 @@ class AgentContext(val agentId: String): Context {
 /**
  * A single persistent agent's instance.
  *
- * binds to several [IMChat] instances, holds an [AgentLoop] instance, and holds a list of available tools.
+ * binds to several [IMChat] instances or even [Channel] instances for account-level controls, holds an [AgentLoop] instance, and holds a list of available tools.
  * Multiple Agents could be active at the same time with different tools running in different chats.
  */
 class Agent(

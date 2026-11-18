@@ -26,6 +26,7 @@ import SelectField from '@/components/SelectField.vue'
 interface EditableModel extends ProviderModel {
   /** 仅前端使用的稳定 key：新建的模型还没有 id，不能拿 id 当 key。 */
   uid: string
+  reasoningEffortsText: string
 }
 
 interface DraftProvider {
@@ -34,6 +35,7 @@ interface DraftProvider {
   type: string
   baseUrl: string
   status: ProviderStatus
+  testError: string | null
   apiKeySet: boolean
   apiKeyPreview: string | null
   models: EditableModel[]
@@ -42,7 +44,6 @@ interface DraftProvider {
 const providerTypes = [
   { value: 'openai-compatible', label: 'OpenAI 兼容' },
   { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'local', label: '本地推理' },
 ]
 
 const statusMeta: Record<ProviderStatus, { label: string; pill: string }> = {
@@ -53,6 +54,7 @@ const statusMeta: Record<ProviderStatus, { label: string; pill: string }> = {
 
 const providers = ref<ModelProvider[]>([])
 const loading = ref(true)
+const reloading = ref(false)
 const loadError = ref<string | null>(null)
 const activeId = ref<string | null>(null)
 const draft = ref<DraftProvider>(blankDraft())
@@ -130,6 +132,11 @@ function nextUid(): string {
   return `m${uidSeq}`
 }
 
+function selectProviderType(type: string) {
+  draft.value.type = type
+  if (type === 'deepseek') draft.value.baseUrl = 'https://api.deepseek.com'
+}
+
 function blankDraft(): DraftProvider {
   return {
     id: '',
@@ -137,6 +144,7 @@ function blankDraft(): DraftProvider {
     type: 'openai-compatible',
     baseUrl: '',
     status: 'untested',
+    testError: null,
     apiKeySet: false,
     apiKeyPreview: null,
     models: [],
@@ -150,9 +158,15 @@ function toDraft(provider: ModelProvider): DraftProvider {
     type: provider.type,
     baseUrl: provider.baseUrl,
     status: provider.status,
+    testError: provider.testError ?? null,
     apiKeySet: provider.apiKeySet,
     apiKeyPreview: provider.apiKeyPreview,
-    models: provider.models.map((model) => ({ ...model, uid: nextUid() })),
+    models: provider.models.map((model) => ({
+      ...model,
+      reasoningEfforts: [...model.reasoningEfforts],
+      reasoningEffortsText: model.reasoningEfforts.join(', '),
+      uid: nextUid(),
+    })),
   }
 }
 
@@ -166,16 +180,20 @@ function toPayload(provider: DraftProvider): ProviderInput {
       .filter((model) => !removing.value.includes(model.uid))
       .map((model) => {
         const contextLength = Number(model.contextLength)
-        const maxImage = Number(model.maxImage)
         return {
           id: model.id.trim(),
           displayName: model.displayName.trim() || model.id.trim(),
           contextLength:
             Number.isFinite(contextLength) && contextLength > 0 ? Math.round(contextLength) : 0,
-          maxImage: Number.isFinite(maxImage) && maxImage > 0 ? Math.round(maxImage) : -1,
+          supportsImage: model.supportsImage,
+          reasoningEfforts: parseReasoningEfforts(model.reasoningEffortsText),
         }
       }),
   }
+}
+
+function parseReasoningEfforts(text: string): string[] {
+  return [...new Set(text.split(/[,，]/).map((value) => value.trim()).filter(Boolean))]
 }
 
 function snapshot(): string {
@@ -291,11 +309,31 @@ async function load() {
   }
 }
 
+async function reloadFromFile() {
+  if (loading.value || reloading.value || saving.value || testing.value || pullLoading.value) return
+  if (!(await ensureDiscard())) return
+
+  reloading.value = true
+  loading.value = true
+  loadError.value = null
+  try {
+    await api.reloadModels()
+    await load()
+  } catch (error) {
+    loadError.value = messageOf(error)
+  } finally {
+    reloading.value = false
+    loading.value = false
+  }
+}
+
 function validate(): string | null {
   if (!draft.value.name.trim()) return '请填写提供商名称'
   if (!draft.value.baseUrl.trim()) return '请填写接口地址'
+  if (!providerTypes.some((type) => type.value === draft.value.type)) return '请选择支持的提供商类型'
 
-  const ids = draft.value.models.map((model) => model.id.trim())
+  const models = draft.value.models.filter((model) => !removing.value.includes(model.uid))
+  const ids = models.map((model) => model.id.trim())
   if (ids.some((id) => !id)) return '每个模型都需要填写模型 id'
 
   const seen = new Set<string>()
@@ -304,11 +342,12 @@ function validate(): string | null {
     seen.add(id)
   }
 
-  const usedElsewhere = providers.value
-    .filter((provider) => provider.id !== draft.value.id)
-    .flatMap((provider) => provider.models.map((model) => model.id))
-  const conflict = ids.find((id) => usedElsewhere.includes(id))
-  if (conflict) return `模型 id 已被其他提供商使用：${conflict}`
+  for (const model of models) {
+    const contextLength = Number(model.contextLength)
+    if (!Number.isSafeInteger(contextLength) || contextLength <= 0 || contextLength > 2147483647) {
+      return `模型 ${model.id.trim()} 的上下文长度必须是 1 到 2147483647 之间的整数`
+    }
+  }
 
   return null
 }
@@ -372,8 +411,9 @@ async function testConnection() {
     const { provider } = await api.testProvider(draft.value.id)
     providers.value = providers.value.map((item) => (item.id === provider.id ? provider : item))
     draft.value.status = provider.status
-    if (provider.status === 'error') {
-      formError.value = '连接失败，请检查接口地址和密钥'
+    draft.value.testError = provider.testError ?? null
+    if (provider.status === 'error' && !draft.value.testError) {
+      formError.value = '连接失败，服务端未提供详细原因'
     }
   } catch (error) {
     formError.value = messageOf(error)
@@ -469,7 +509,9 @@ function addModel() {
     id: '',
     displayName: '',
     contextLength: 131072,
-    maxImage: -1,
+    supportsImage: false,
+    reasoningEfforts: [],
+    reasoningEffortsText: '',
   })
 
   // 先让行以收起状态挂载，下一帧再展开，这样高度过渡才会真正播放。
@@ -494,7 +536,7 @@ function removeModel(uid: string) {
 }
 
 function toggleImage(model: EditableModel) {
-  model.maxImage = model.maxImage > 0 ? -1 : 600
+  model.supportsImage = !model.supportsImage
 }
 
 /** 只取数字：type="number" 在聚焦时会冒出系统自带的小箭头，和这里的排版对不上。 */
@@ -506,10 +548,6 @@ function digitsOf(event: Event): number {
 
 function updateContext(model: EditableModel, event: Event) {
   model.contextLength = digitsOf(event)
-}
-
-function updateMaxImage(model: EditableModel, event: Event) {
-  model.maxImage = digitsOf(event) || -1
 }
 
 function formatContext(value: number): string {
@@ -591,13 +629,16 @@ function importSelected() {
   for (const id of pullSelected.value) {
     if (isAdded(id)) continue
     const remote = remoteModels.value.find((model) => model.id === id)
+    if (!remote) continue
     const uid = nextUid()
     draft.value.models.push({
       uid,
       id,
-      displayName: remote?.displayName ?? id,
-      contextLength: remote?.contextLength ?? 0,
-      maxImage: remote?.maxImage ?? -1,
+      displayName: remote.displayName,
+      contextLength: remote.contextLength,
+      supportsImage: remote.supportsImage,
+      reasoningEfforts: [...remote.reasoningEfforts],
+      reasoningEffortsText: remote.reasoningEfforts.join(', '),
     })
     if (!firstUid) firstUid = uid
   }
@@ -688,15 +729,27 @@ onBeforeUnmount(() => {
         <h1 class="text-[28px] font-semibold leading-tight tracking-tight text-slate-900">模型提供商</h1>
       </div>
 
-      <button
-        type="button"
-        class="press flex h-10 items-center gap-1.5 rounded-xl bg-brand-300 px-4 text-[13px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
-        :disabled="loading"
-        @click="startNew"
-      >
-        <Plus :size="15" :stroke-width="2.4" />
-        添加提供商
-      </button>
+      <div class="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          class="press flex h-10 items-center gap-1.5 rounded-xl px-4 text-[13px] text-slate-600 hover:bg-panel disabled:cursor-default disabled:opacity-50"
+          :disabled="loading || reloading || saving || testing || pullLoading"
+          @click="reloadFromFile"
+        >
+          <Loader2 v-if="reloading" :size="15" class="animate-spin" />
+          <RefreshCw v-else :size="15" />
+          {{ reloading ? '重新加载中' : '从文件重新加载' }}
+        </button>
+        <button
+          type="button"
+          class="press flex h-10 items-center gap-1.5 rounded-xl bg-brand-300 px-4 text-[13px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
+          :disabled="loading || reloading"
+          @click="startNew"
+        >
+          <Plus :size="15" :stroke-width="2.4" />
+          添加提供商
+        </button>
+      </div>
     </header>
 
     <Transition
@@ -824,12 +877,14 @@ onBeforeUnmount(() => {
 
           <Transition name="notice">
             <div
-              v-if="formError"
+              v-if="formError || (draft.status === 'error' && draft.testError)"
               class="mt-4 flex items-start gap-2.5 rounded-xl bg-red-50 px-4 py-3 text-[12.5px] leading-relaxed text-red-700"
               role="alert"
             >
               <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
-              <span class="min-w-0">{{ formError }}</span>
+              <span class="min-w-0 whitespace-pre-wrap break-words">{{
+                formError || draft.testError
+              }}</span>
             </div>
           </Transition>
 
@@ -848,7 +903,15 @@ onBeforeUnmount(() => {
 
               <div class="block">
                 <span class="mb-1.5 block text-[12px] text-slate-500">类型</span>
-                <SelectField v-model="draft.type" :options="providerTypes" label="类型" />
+                <SelectField
+                  :model-value="draft.type"
+                  :options="providerTypes"
+                  label="类型"
+                  @update:model-value="selectProviderType"
+                />
+                <p class="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+                  本地服务选择 OpenAI 兼容，并填写本地接口地址。
+                </p>
               </div>
 
               <label class="block">
@@ -977,7 +1040,7 @@ onBeforeUnmount(() => {
                         {{ formatContext(Number(model.contextLength)) }} 上下文
                       </span>
                       <span
-                        v-if="model.maxImage > 0"
+                        v-if="model.supportsImage"
                         class="rounded bg-white px-2 py-1 text-[10.5px] text-slate-500"
                       >
                         图片
@@ -1048,16 +1111,16 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               role="switch"
-                              :aria-checked="model.maxImage > 0"
+                              :aria-checked="model.supportsImage"
                               class="relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-                              :class="model.maxImage > 0 ? 'bg-brand-300' : 'bg-slate-200'"
+                              :class="model.supportsImage ? 'bg-brand-300' : 'bg-slate-200'"
                               @click="toggleImage(model)"
                             >
                               <span
                                 class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200"
                                 :style="{
                                   transform:
-                                    model.maxImage > 0 ? 'translateX(16px)' : 'translateX(0)',
+                                    model.supportsImage ? 'translateX(16px)' : 'translateX(0)',
                                 }"
                               ></span>
                             </button>
@@ -1065,24 +1128,16 @@ onBeforeUnmount(() => {
                         </div>
 
                         <label class="block">
-                          <span class="mb-1.5 block text-[12px] text-slate-500">最大尺寸</span>
-                          <span class="relative block">
-                            <input
-                              type="text"
-                              inputmode="numeric"
-                              autocomplete="off"
-                              maxlength="9"
-                              :disabled="model.maxImage <= 0"
-                              :value="model.maxImage > 0 ? model.maxImage : ''"
-                              placeholder="600"
-                              class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 pr-9 text-[13.5px] tabular-nums text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                              @input="updateMaxImage(model, $event)"
-                            />
-                            <span
-                              class="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400"
-                            >
-                              px
-                            </span>
+                          <span class="mb-1.5 block text-[12px] text-slate-500">思考强度</span>
+                          <input
+                            v-model="model.reasoningEffortsText"
+                            type="text"
+                            spellcheck="false"
+                            placeholder="low, high, max"
+                            class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                          />
+                          <span class="mt-1.5 block text-[11px] leading-relaxed text-slate-400">
+                            用逗号分隔接口支持的强度，留空表示不支持思考。
                           </span>
                         </label>
 

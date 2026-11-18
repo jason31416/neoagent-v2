@@ -125,10 +125,10 @@ sealed interface ModelEvent {
 }
 
 class ModelCapability(
-    var maxImage: Int=-1,
+    var supportsImage: Boolean = false,
+    var reasoningEfforts: List<String> = emptyList(), // empty list: doesn't support reasoning at all
     var contextLength: Int=1048576,
 ) {
-    fun supportsImage() = maxImage > 0
 }
 
 /**

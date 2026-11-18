@@ -1,6 +1,5 @@
 package cn.jason31416.framework
 
-import cn.jason31416.Config
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -283,7 +282,7 @@ class AgentLoop(
                             continue
                         }
 
-                        if(lastContextUsage!=null && lastContextUsage!!>model.capabilities.contextLength * Config.get("agent.compact-threshold", 0.9)){
+                        if(lastContextUsage!=null && lastContextUsage!!>model.capabilities.contextLength * 0.9){
                             compactSession()
                         }
 

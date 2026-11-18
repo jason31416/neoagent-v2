@@ -33,6 +33,10 @@ dependencies {
     implementation("io.ktor:ktor-server-auth:3.1.3")
     implementation("io.ktor:ktor-server-sessions:3.1.3")
 
+    implementation("io.ktor:ktor-client-core:3.1.3")
+    implementation("io.ktor:ktor-client-cio:3.1.3")
+    implementation("io.ktor:ktor-client-websockets:3.1.3")
+
     implementation("org.kotlincrypto.hash:sha2:0.7.0")
 }
 

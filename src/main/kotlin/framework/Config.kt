@@ -421,38 +421,36 @@ abstract class Config(
     }
 }
 
-/** 频道配置：除 sections 外，还有前端顶部的 enabled 和 status。 */
+/** 频道配置：除 sections 外，还有前端顶部的 enabled */
+
+// todo: channel config应该不能reuse 现有的config相关内容，或者需要较大调整
+// 主要考虑：如何动态从配置中加载不同类型的channel config?
 abstract class ChannelConfig(
     id: String,
     val name: String,
-    path: String,
-    private val defaultEnabled: Boolean = false,
-) : Config(id, path) {
+) : Config(id, "channels/$id") {
     var enabled: Boolean
-        get() = (ConfigManager.read(path, ConfigManager.ROOT_SECTION, ENABLED_KEY) as? Boolean)
-            ?: defaultEnabled
+        get() = (ConfigManager.read(path, ConfigManager.ROOT_SECTION, "enabled") as? Boolean)
+            ?: false
         set(value) {
-            ConfigManager.write(path, ConfigManager.ROOT_SECTION, ENABLED_KEY, value)
+            ConfigManager.write(path, ConfigManager.ROOT_SECTION, "enabled", value)
         }
 
-    val status: String
-        get() = when {
-            !enabled -> "stopped"
-            sections.flatMap { it.fieldList }.any { it.required && it.isBlank() } -> "error"
-            else -> "running"
+    // the id of the ChannelHandler
+    var type: String?
+        get() = ConfigManager.read(path, ConfigManager.ROOT_SECTION, "type") as? String
+        set(value) {
+            ConfigManager.write(path, ConfigManager.ROOT_SECTION, "type", value)
         }
 
     fun channelView(): Map<String, Any?> = linkedMapOf(
         "id" to id,
+        "type" to type,
         "name" to name,
         "enabled" to enabled,
-        "status" to status,
+        "status" to "unknown",
         "groups" to sectionsView(),
     )
-
-    companion object {
-        private const val ENABLED_KEY = "enabled"
-    }
 }
 
 private fun JsonElement.toPlainValue(): Any? = when (this) {

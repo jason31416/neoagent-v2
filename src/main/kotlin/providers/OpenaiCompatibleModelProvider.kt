@@ -49,12 +49,7 @@ open class OpenaiCompatibleModelProvider(
         .connectTimeout(Duration.ofSeconds(30))
         .build(),
     protected val extraHeaders: Map<String, String> = emptyMap(),
-) : ModelProvider {
-
-    @Volatile
-    private var cachedModels: List<Model> = emptyList()
-
-    override fun getAvailableModels(): List<Model> = cachedModels
+) : ModelProvider() {
 
     final override fun requestModel(
         model: Model,
@@ -427,7 +422,14 @@ open class OpenaiCompatibleModelProvider(
 
     // ---------------------------------------------------------------- models
 
-    override fun reloadModels() {
+    override fun checkConnection() {
+        val response = httpClient.send(buildModelsRequest(), HttpResponse.BodyHandlers.discarding())
+        if (response.statusCode() !in 200..299) {
+            throw OpenaiHttpException(response.statusCode(), "")
+        }
+    }
+
+    override fun fetchAvailableModels(): List<Model> {
         val response = httpClient.send(
             buildModelsRequest(),
             HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
@@ -437,7 +439,7 @@ open class OpenaiCompatibleModelProvider(
             throw OpenaiHttpException(response.statusCode(), response.body())
         }
 
-        cachedModels = parseModels(Json.parseToJsonElement(response.body()).jsonObject)
+        return parseModels(Json.parseToJsonElement(response.body()).jsonObject)
     }
 
     private fun buildModelsRequest(): HttpRequest {
@@ -454,8 +456,46 @@ open class OpenaiCompatibleModelProvider(
     private fun modelsEndpoint(): String =
         baseurl.trimEnd('/') + "/models"
 
-    protected open fun modelCapabilities(modelID: String): ModelCapability{
+    protected open fun defaultModelCapabilities(modelID: String): ModelCapability{
         return ModelCapability()
+    }
+
+    protected open fun parseModelCapabilities(
+        modelId: String,
+        obj: JsonObject,
+    ): ModelCapability {
+        val defaults = defaultModelCapabilities(modelId)
+
+        val modalities = obj["modalities"] as? JsonObject
+        val input = modalities?.get("input") as? JsonArray
+
+        val capabilities = obj["capabilities"] as? JsonObject
+        val reasoning = capabilities?.get("reasoning") as? JsonObject
+
+        val limit = obj["limit"] as? JsonObject
+
+        val supportsImage = input?.any {
+            it.jsonPrimitive.content.startsWith("image")
+        }
+
+        val reasoningSupported =
+            (reasoning?.get("supported") as? JsonPrimitive)?.booleanOrNull
+
+        val reasoningEfforts = when (reasoningSupported) {
+            false -> emptyList()
+            else -> (reasoning?.get("effort") as? JsonArray)?.map {
+                it.jsonPrimitive.content
+            }
+        }
+
+        val contextLength =
+            (limit?.get("context") as? JsonPrimitive)?.intOrNull
+
+        return ModelCapability(
+            supportsImage = supportsImage ?: defaults.supportsImage,
+            reasoningEfforts = reasoningEfforts ?: defaults.reasoningEfforts,
+            contextLength = contextLength ?: defaults.contextLength,
+        )
     }
 
     protected open fun parseModels(root: JsonObject): List<Model> =
@@ -467,7 +507,7 @@ open class OpenaiCompatibleModelProvider(
             val displayName = (obj["name"] as? JsonPrimitive)
                 ?.contentOrNull
                 ?: modelId
-            Model(modelId, displayName, this, modelCapabilities(modelId))
+            Model(modelId, displayName, this, parseModelCapabilities(modelId, obj))
         } ?: emptyList()
 
     // ---------------------------------------------------------------- transport

@@ -2,8 +2,8 @@ package cn.jason31416.database
 
 import cn.jason31416.agent.AgentsTable
 import cn.jason31416.agent.ContextTable
-import cn.jason31416.agent.IMMessagesTable
 import cn.jason31416.agent.PermissionTable
+import cn.jason31416.channel.IMMessagesTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 

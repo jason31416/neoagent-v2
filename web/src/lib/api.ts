@@ -45,22 +45,24 @@ export interface AuthResponse {
 export type ProviderStatus = 'connected' | 'untested' | 'error'
 
 export interface ProviderModel {
-  /** 模型 id，同时也是后端 model-id -> Model 表的 key，全局唯一。 */
+  /** 模型 id，在同一个提供商内唯一。 */
   id: string
   displayName: string
   /** 上下文窗口，单位 token。 */
   contextLength: number
-  /** 图片输入的最大边长；-1 表示不支持图片。 */
-  maxImage: number
+  supportsImage: boolean
+  /** 支持的思考强度；空列表表示不支持思考。 */
+  reasoningEfforts: string[]
 }
 
 export interface ModelProvider {
   id: string
   name: string
-  /** 适配器类型：openai-compatible / deepseek / local。 */
+  /** 适配器类型：openai-compatible / deepseek；本地服务使用兼容接口地址。 */
   type: string
   baseUrl: string
   status: ProviderStatus
+  testError?: string | null
   apiKeySet: boolean
   /** 服务端给的掩码，例如 sk-••••••••3f9a；没有密钥时为 null。 */
   apiKeyPreview: string | null
@@ -80,7 +82,8 @@ export interface RemoteModel {
   id: string
   displayName: string
   contextLength: number
-  maxImage: number
+  supportsImage: boolean
+  reasoningEfforts: string[]
 }
 
 /** 配置项的控件类型；后端只下发类型，前端按类型渲染，不认识具体字段。 */
@@ -218,6 +221,8 @@ export const api = {
   status: () => request<RuntimeStatus>('/api/status'),
 
   models: () => request<{ providers: ModelProvider[] }>('/api/models'),
+
+  reloadModels: () => request<unknown>('/api/models/reload', { method: 'POST' }),
 
   createProvider: (body: ProviderInput) =>
     request<{ provider: ModelProvider }>('/api/models/providers', { method: 'POST', body }),

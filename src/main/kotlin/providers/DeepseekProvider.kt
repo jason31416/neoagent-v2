@@ -59,10 +59,8 @@ open class DeepSeekProvider(
         put("reasoning_content", entry.reasoningContent ?: "")
     }
 
-    override fun modelCapabilities(modelID: String): ModelCapability {
-        return ModelCapability(
-            maxImage = 600
-        )
+    override fun defaultModelCapabilities(modelID: String): ModelCapability {
+        return ModelCapability(supportsImage = true, reasoningEfforts = listOf("low", "high", "max"))
     }
 
     override fun consumeChunk(
