@@ -25,21 +25,17 @@ const launchAt = ref<number | null>(null)
 const stats = computed(() => status.value?.statistics ?? null)
 const systemInfo = computed(() => stats.value?.systemInfo ?? null)
 
-const elapsed = computed(() => (launchAt.value === null ? 0 : Math.max(0, now.value - launchAt.value)))
+const elapsed = computed(() =>
+  launchAt.value === null ? 0 : Math.max(0, now.value - launchAt.value),
+)
 
-/**
- * 两张图的柱子宽度要对齐，所以窄的那张少放几天：
- * 14 根柱子落在 3 格宽的面板里，9 根落在 2 格宽的面板里，宽度基本一致。
- * 窗口变窄时整体少放几天，否则每根柱子下面的日期会挤在一起。
+/*
+ * 柱子有固定最小宽度，窄屏时图表可以横向滑动，
+ * 所以所有尺寸都渲染和宽屏一样多的天，不再按视口砍数据。
+ * 14 根落在 3 格面板、9 根落在 2 格面板，柱子宽度基本一致。
  */
-const isWide = ref(false)
-
-const tokenSeries = computed(() =>
-  buildDailySeries(stats.value?.dailyTokenUsage, isWide.value ? 14 : 10),
-)
-const messageSeries = computed(() =>
-  buildDailySeries(stats.value?.dailyMessagesHandled, isWide.value ? 9 : 7),
-)
+const tokenSeries = computed(() => buildDailySeries(stats.value?.dailyTokenUsage, 14))
+const messageSeries = computed(() => buildDailySeries(stats.value?.dailyMessagesHandled, 9))
 
 const agentsAvailable = computed(() => isAvailable(stats.value?.agents ?? -1))
 const channelsAvailable = computed(() => isAvailable(stats.value?.channels ?? -1))
@@ -72,15 +68,7 @@ async function load(isRefresh = false) {
   }
 }
 
-const wideQuery = window.matchMedia('(min-width: 1280px)')
-
-function syncWidth(event: MediaQueryListEvent | MediaQueryList) {
-  isWide.value = event.matches
-}
-
 onMounted(() => {
-  syncWidth(wideQuery)
-  wideQuery.addEventListener('change', syncWidth)
   void load()
   ticker = window.setInterval(() => {
     now.value = Date.now()
@@ -89,7 +77,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (ticker !== undefined) window.clearInterval(ticker)
-  wideQuery.removeEventListener('change', syncWidth)
 })
 </script>
 
@@ -98,12 +85,16 @@ onBeforeUnmount(() => {
     <div>
       <header class="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
         <div class="min-w-0">
-          <h1 class="text-[28px] font-semibold leading-tight tracking-tight text-slate-900">
+          <h1
+            class="text-[22px] font-semibold leading-tight tracking-tight text-slate-900 sm:text-[28px]"
+          >
             {{ greeting }}，这里是 NeoAgent！
           </h1>
           <p class="mt-2 text-sm text-slate-500">
             已经运行了
-            <span class="font-medium text-slate-700 tabular-nums">{{ formatDuration(elapsed) }}</span>
+            <span class="font-medium text-slate-700 tabular-nums">{{
+              formatDuration(elapsed)
+            }}</span>
           </p>
         </div>
 
@@ -155,7 +146,7 @@ onBeforeUnmount(() => {
         </div>
       </Transition>
 
-      <section class="mt-9 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section class="mt-6 grid grid-cols-2 gap-3 sm:mt-9 sm:gap-4 xl:grid-cols-4">
         <StatTile
           label="Agents"
           :icon="Bot"
@@ -192,7 +183,7 @@ onBeforeUnmount(() => {
         />
       </section>
 
-      <section class="mt-4 grid gap-4 lg:grid-cols-5">
+      <section class="mt-3 grid grid-cols-1 gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-5">
         <MetricBars
           class="lg:col-span-3"
           title="每日 Token 用量"

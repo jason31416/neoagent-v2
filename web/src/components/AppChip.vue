@@ -13,7 +13,7 @@ withDefaults(
 
 <template>
   <span
-    class="inline-flex select-none items-center gap-1.5 rounded-full bg-panel px-3 py-1 text-xs text-slate-600 transition-colors duration-200 hover:bg-panel-strong"
+    class="inline-flex max-w-full select-none items-center gap-1.5 rounded-full bg-panel px-3 py-1 text-xs text-slate-600 transition-colors duration-200 hover:bg-panel-strong"
     :class="mono ? 'font-mono text-[11px] tabular-nums' : ''"
   >
     <component
@@ -24,6 +24,8 @@ withDefaults(
       class="shrink-0 text-slate-400"
       aria-hidden="true"
     />
-    <slot>{{ label }}</slot>
+    <span class="min-w-0 truncate"
+      ><slot>{{ label }}</slot></span
+    >
   </span>
 </template>
