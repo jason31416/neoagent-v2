@@ -15,6 +15,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 @Serializable
 data class ProviderInput(
+    val id: String?=null,
     val name: String,
     val type: String,
     val baseUrl: String,
@@ -79,6 +80,10 @@ object ModelProviderManager {
         loaded()[providerId]?.provider?.getModel(modelId)
     }
 
+    fun getModel(modelKey: String) = synchronized(lock) {
+        loaded()[modelKey.substringBefore("/")]?.provider?.getModel(modelKey.substringAfter("/"))
+    }
+
     fun listProviders(): List<ProviderView> = synchronized(lock) {
         loaded().values.map { view(it) }
     }
@@ -99,8 +104,9 @@ object ModelProviderManager {
 
     fun create(input: ProviderInput): ProviderView = synchronized(lock) {
         val current = loaded()
+        require(input.id !in current) { "提供商 ID 已存在：${input.id}" }
         val config = normalize(ProviderConfig(
-            UUID.randomUUID().toString(), input.name, input.type, input.baseUrl,
+            input.id!!, input.name, input.type, input.baseUrl,
             keyFor(input, ""), input.models,
         ))
         val entry = Entry(config, instantiate(config))
@@ -186,8 +192,9 @@ object ModelProviderManager {
     }
 
     private fun normalize(config: ProviderConfig): ProviderConfig {
-        require(config.id.isNotBlank()) { "提供商 ID 不能为空" }
-        require(config.name.isNotBlank()) { "提供商名称不能为空" }
+        require(config.id.trim().isNotBlank()) { "提供商 ID 不能为空" }
+        require(config.name.trim().isNotBlank()) { "提供商名称不能为空" }
+        require(!config.id.contains("/")) { "提供商 ID 不能包含 '/'" }
         require(config.type in setOf("openai-compatible", "deepseek")) { "不支持的提供商类型" }
         val base = config.baseUrl.trim().trimEnd('/')
         val uri = try { URI(base) } catch (_: Exception) { throw IllegalArgumentException("接口地址不合法") }

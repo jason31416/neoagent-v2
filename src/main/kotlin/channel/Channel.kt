@@ -1,5 +1,6 @@
 package cn.jason31416.channel
 
+import cn.jason31416.agent.Agent
 import cn.jason31416.agent.CommandHandler
 import cn.jason31416.agent.hasPermission
 import cn.jason31416.database.db
@@ -87,10 +88,19 @@ class IMMessageContent(val content: List<IMMessageComponent> = listOf<IMMessageC
  * When agent needs to fetch a message, fetch stringified content from database.
  */
 class IMMessage(val id: String, val chat: IMChat, val sender: IMUser, val timestamp: Long, val content: IMMessageContent, val replyTo: String?=null){
-
+    val channel: Channel
+        get() = chat.channel
 }
 
 class NotSupportedException(msg: String): Exception(msg)
+
+interface AgentInterface {
+    fun getInterfaceID(): String
+    // Functions that the agent can actively call, for both IMChat and Channel
+    fun executeFunction(operation: String, parameters: Map<String, String>): String {
+        throw NotSupportedException("Operation not supported: $operation")
+    }
+}
 
 /**
  * A single chat in the im service
@@ -98,11 +108,17 @@ class NotSupportedException(msg: String): Exception(msg)
  *
  * This should be implemented by the channels to provide the functionalities.
  */
-interface IMChat {
+interface IMChat: AgentInterface {
     val channel: Channel
     val id: String
     // Some group chats can be set to require @ for the agent to be summoned
     val isGroup: Boolean
+
+    fun getKey(): String {
+        return channel.id+":"+id
+    }
+
+    override fun getInterfaceID(): String = "chat-"+getKey()
 
     // Must implement functions
     suspend fun _sendMessage(message: IMMessageContent, replyTo: String?=null): IMMessage
@@ -121,16 +137,9 @@ interface IMChat {
         }
         return ret
     }
-
-    // Optional functions. Exposed to the model as tool. Can contain functionalities such as recall messages. Usages should be explained clearly.
-    fun executeFunction(operation: String, parameters: Map<String, String>): String {
-        throw NotSupportedException("Operation not supported: $operation")
-    }
 }
 
-fun IMChat.getKey(): String {
-    return channel.id+":"+id
-}
+
 
 
 data class IMEvent(val chat: IMChat?, val type: String, val content: String)
@@ -141,11 +150,12 @@ data class IMEvent(val chat: IMChat?, val type: String, val content: String)
  */
 class Channel(val id: String,
               val config: ChannelConfig,
-              private var channelHandler: ChannelHandler) {
-
+              private var channelHandler: ChannelHandler): AgentInterface {
     init {
         channelHandler.setChannel(this)
     }
+
+    override fun getInterfaceID(): String = "channel-$id"
 
     companion object {
         fun constructChannelFromConfig(config: ChannelConfig) = Channel(
@@ -181,7 +191,7 @@ class Channel(val id: String,
             }
         }
 
-
+        Agent.getListeningAgents(message.chat).forEach { agent -> agent.handleMessage(message)}
     }
 
     fun receiveEvent(event: IMEvent){

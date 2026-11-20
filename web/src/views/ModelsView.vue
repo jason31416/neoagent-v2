@@ -22,6 +22,7 @@ import {
 } from '@/lib/api'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import SelectField from '@/components/SelectField.vue'
+import ProviderPicker, { type ProviderPreset } from '@/components/ProviderPicker.vue'
 
 interface EditableModel extends ProviderModel {
   /** 仅前端使用的稳定 key：新建的模型还没有 id，不能拿 id 当 key。 */
@@ -56,7 +57,8 @@ const providers = ref<ModelProvider[]>([])
 const loading = ref(true)
 const reloading = ref(false)
 const loadError = ref<string | null>(null)
-const activeId = ref<string | null>(null)
+const newProviderId = Symbol('new-provider')
+const activeId = ref<string | symbol | null>(null)
 const draft = ref<DraftProvider>(blankDraft())
 const baseline = ref('')
 const saving = ref(false)
@@ -66,6 +68,9 @@ const formError = ref<string | null>(null)
 const expanded = ref<string[]>([])
 const replacingKey = ref(false)
 const pendingKey = ref('')
+const newIdInput = ref<HTMLInputElement | null>(null)
+const pickerOpen = ref(false)
+const selectingPreset = ref(false)
 
 // 标签下划线用一个共享元素滑动，比每个标签各挂一条线更连贯。
 const tabsEl = ref<HTMLElement | null>(null)
@@ -120,16 +125,41 @@ let confirmResolve: ((value: boolean) => void) | null = null
 let uidSeq = 0
 let savedTimer: number | undefined
 
-const isNew = computed(() => activeId.value === '__new__')
+const isNew = computed(() => activeId.value === newProviderId)
 const hasDraft = computed(() => activeId.value !== null)
 const totalModels = computed(() =>
   providers.value.reduce((total, provider) => total + provider.models.length, 0),
 )
 const dirty = computed(() => snapshot() !== baseline.value)
+const busy = computed(() => saving.value || testing.value || pullLoading.value)
+const idTouched = ref(false)
+const idManuallyEdited = ref(false)
+const idError = computed(() => {
+  if (!isNew.value) return null
+  const id = draft.value.id
+  if (!id) return '请填写提供商 ID'
+  if (/[\s/]/u.test(id)) return '提供商 ID 不能包含空白字符或 /'
+  if (providers.value.some((provider) => provider.id === id)) return `提供商 ID 已存在：${id}`
+  return null
+})
+const visibleIdError = computed(() =>
+  idTouched.value || draft.value.id !== '' ? idError.value : null,
+)
 
 function nextUid(): string {
   uidSeq += 1
   return `m${uidSeq}`
+}
+
+// 只在新建且没有手动改过 ID 时跟随名称，不转换中文为拼音。
+function updateDisplayName(event: Event) {
+  const name = (event.target as HTMLInputElement).value
+  draft.value.name = name
+  if (isNew.value && !idManuallyEdited.value) {
+    draft.value.id = name
+      .replace(/[^\x00-\x7F]/g, (char) => (/[\p{P}\p{S}\s]/u.test(char) ? '_' : ''))
+      .replace(/[^a-zA-Z0-9_]/g, '_')
+  }
 }
 
 function selectProviderType(type: string) {
@@ -170,8 +200,9 @@ function toDraft(provider: ModelProvider): DraftProvider {
   }
 }
 
-function toPayload(provider: DraftProvider): ProviderInput {
+function toPayload(provider: DraftProvider, includeId = false): ProviderInput {
   return {
+    ...(includeId ? { id: provider.id } : {}),
     name: provider.name.trim(),
     type: provider.type,
     baseUrl: provider.baseUrl.trim(),
@@ -193,11 +224,21 @@ function toPayload(provider: DraftProvider): ProviderInput {
 }
 
 function parseReasoningEfforts(text: string): string[] {
-  return [...new Set(text.split(/[,，]/).map((value) => value.trim()).filter(Boolean))]
+  return [
+    ...new Set(
+      text
+        .split(/[,，]/)
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ]
 }
 
 function snapshot(): string {
-  return JSON.stringify({ provider: toPayload(draft.value), key: pendingKey.value })
+  return JSON.stringify({
+    provider: toPayload(draft.value, isNew.value),
+    key: pendingKey.value,
+  })
 }
 
 baseline.value = snapshot()
@@ -276,23 +317,43 @@ async function ensureDiscard(): Promise<boolean> {
 }
 
 async function switchProvider(id: string) {
-  if (id === activeId.value) return
+  if (busy.value || id === activeId.value) return
   if (!(await ensureDiscard())) return
   openProvider(id)
 }
 
-async function startNew() {
-  if (isNew.value) return
-  if (!(await ensureDiscard())) return
-  activeId.value = '__new__'
+function startNew() {
+  if (!busy.value) pickerOpen.value = true
+}
+
+async function selectPreset(preset: ProviderPreset | null) {
+  if (busy.value || selectingPreset.value) return
+  selectingPreset.value = true
+  let discard = false
+  try {
+    discard = await ensureDiscard()
+  } finally {
+    selectingPreset.value = false
+  }
+  if (!discard) return
+  pickerOpen.value = false
+  idTouched.value = false
+  idManuallyEdited.value = false
+  activeId.value = newProviderId
   viewKey.value = '__new'
   removing.value = []
-  draft.value = blankDraft()
+  draft.value = {
+    ...blankDraft(),
+    ...(preset
+      ? { id: preset.id, name: preset.name, type: preset.type, baseUrl: preset.baseUrl }
+      : {}),
+  }
   pendingKey.value = ''
   replacingKey.value = false
   expanded.value = []
   formError.value = null
   baseline.value = snapshot()
+  void nextTick(() => newIdInput.value?.focus())
 }
 
 async function load() {
@@ -328,9 +389,12 @@ async function reloadFromFile() {
 }
 
 function validate(): string | null {
-  if (!draft.value.name.trim()) return '请填写提供商名称'
+  if (idError.value) return idError.value
+  if (!draft.value.name.trim()) return '请填写显示名称'
+
   if (!draft.value.baseUrl.trim()) return '请填写接口地址'
-  if (!providerTypes.some((type) => type.value === draft.value.type)) return '请选择支持的提供商类型'
+  if (!providerTypes.some((type) => type.value === draft.value.type))
+    return '请选择支持的提供商类型'
 
   const models = draft.value.models.filter((model) => !removing.value.includes(model.uid))
   const ids = models.map((model) => model.id.trim())
@@ -353,7 +417,12 @@ function validate(): string | null {
 }
 
 async function save(): Promise<boolean> {
-  if (!hasDraft.value) return false
+  if (!hasDraft.value || busy.value) return false
+  if (idError.value) {
+    idTouched.value = true
+    newIdInput.value?.focus()
+    return false
+  }
   const problem = validate()
   if (problem) {
     formError.value = problem
@@ -363,7 +432,7 @@ async function save(): Promise<boolean> {
   saving.value = true
   formError.value = null
   try {
-    const payload = toPayload(draft.value)
+    const payload = toPayload(draft.value, isNew.value)
     if (pendingKey.value) payload.apiKey = pendingKey.value
 
     const result = isNew.value
@@ -402,7 +471,7 @@ async function save(): Promise<boolean> {
 }
 
 async function testConnection() {
-  if (!hasDraft.value || isNew.value) return
+  if (!hasDraft.value || isNew.value || busy.value) return
   if (dirty.value && !(await save())) return
 
   testing.value = true
@@ -423,9 +492,9 @@ async function testConnection() {
 }
 
 async function deleteProvider() {
-  if (!hasDraft.value || isNew.value) return
+  if (!hasDraft.value || isNew.value || busy.value) return
   const id = draft.value.id
-  const name = draft.value.name.trim() || '这个提供商'
+  const name = draft.value.name.trim() || id
   const ok = await askConfirm({
     title: `删除 ${name}？`,
     message: '这个提供商和它的模型配置会一起删除，无法撤销。',
@@ -589,7 +658,7 @@ function toggleSelectAll() {
 }
 
 async function openPull() {
-  if (!hasDraft.value || isNew.value) return
+  if (!hasDraft.value || isNew.value || busy.value) return
   if (dirty.value && !(await save())) return
 
   pullOpen.value = true
@@ -663,6 +732,7 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  if (pickerOpen.value) return
   if (event.key === 'Escape' && pullOpen.value) {
     // 拉取列表可能很长，Esc 随时能退出。
     event.preventDefault()
@@ -691,7 +761,16 @@ watch(
 watch(activeId, () => revealActiveTab(), { flush: 'post' })
 
 watch(
-  [activeId, () => providers.value.length, isNew, () => draft.value.name],
+  () => draft.value.id,
+  () => {
+    if (!isNew.value) return
+    formError.value = null
+    revealActiveTab()
+  },
+)
+
+watch(
+  [activeId, () => providers.value.length, isNew, () => draft.value.id],
   () => {
     void nextTick(measureUnderline)
   },
@@ -699,6 +778,7 @@ watch(
 )
 
 onBeforeRouteLeave(async () => {
+  if (busy.value) return false
   if (!dirty.value) return true
   return askConfirm({
     title: '放弃未保存的修改？',
@@ -726,7 +806,9 @@ onBeforeUnmount(() => {
   <div class="animate-fade-in">
     <header class="flex items-end justify-between gap-6">
       <div>
-        <h1 class="text-[28px] font-semibold leading-tight tracking-tight text-slate-900">模型提供商</h1>
+        <h1 class="text-[28px] font-semibold leading-tight tracking-tight text-slate-900">
+          模型提供商
+        </h1>
       </div>
 
       <div class="flex shrink-0 items-center gap-2">
@@ -743,7 +825,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="press flex h-10 items-center gap-1.5 rounded-xl bg-brand-300 px-4 text-[13px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
-          :disabled="loading || reloading"
+          :disabled="loading || reloading || busy"
           @click="startNew"
         >
           <Plus :size="15" :stroke-width="2.4" />
@@ -793,6 +875,7 @@ onBeforeUnmount(() => {
             :key="provider.id"
             type="button"
             :data-tab-active="activeId === provider.id"
+            :disabled="busy"
             class="shrink-0 whitespace-nowrap pb-3.5 text-[16px] transition-colors duration-150"
             :class="
               activeId === provider.id
@@ -801,17 +884,32 @@ onBeforeUnmount(() => {
             "
             @click="switchProvider(provider.id)"
           >
-            {{ provider.name }}
+            {{ provider.id }}
           </button>
 
-          <button
-            v-if="isNew"
-            type="button"
-            :data-tab-active="isNew"
-            class="shrink-0 whitespace-nowrap pb-3.5 text-[16px] font-medium text-brand-800"
-          >
-            {{ draft.name.trim() || '新提供商' }}
-          </button>
+          <div v-if="isNew" class="shrink-0 pb-3.5" data-tab-active="true">
+            <div class="relative inline-grid font-mono text-[16px] font-medium">
+              <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-pre">{{
+                draft.id || '新提供商 ID'
+              }}</span>
+              <input
+                ref="newIdInput"
+                v-model="draft.id"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                autocapitalize="off"
+                aria-label="提供商 ID"
+                :aria-invalid="!!visibleIdError"
+                aria-describedby="provider-id-help"
+                :disabled="busy"
+                placeholder="新提供商 ID"
+                class="absolute inset-0 h-full w-full min-w-0 border-0 bg-transparent p-0 font-mono text-[16px] font-medium text-brand-800 outline-none placeholder:font-medium placeholder:text-slate-400 disabled:opacity-60"
+                @input="idManuallyEdited = true"
+                @blur="idTouched = true"
+              />
+            </div>
+          </div>
 
           <span
             class="pointer-events-none absolute bottom-0 left-0 h-[2px] rounded-full bg-brand-400"
@@ -825,355 +923,365 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <p
+        v-if="isNew"
+        id="provider-id-help"
+        class="mt-2 text-[12px]"
+        :class="visibleIdError ? 'text-red-600' : 'text-slate-400'"
+        :role="visibleIdError ? 'alert' : undefined"
+      >
+        {{ visibleIdError }}
+      </p>
+
       <Transition name="tab" mode="out-in">
         <section :key="viewKey" class="mt-6">
-          <div class="flex items-center justify-between gap-8">
-            <div class="flex min-w-0 items-center gap-3">
-              <h2 class="truncate text-[21px] font-semibold tracking-tight text-slate-900">
-                {{ draft.name.trim() || '新提供商' }}
-              </h2>
-              <span
-                class="min-w-[64px] shrink-0 rounded-full px-2.5 py-1 text-center text-[11px] transition-colors duration-200"
-                :class="statusMeta[draft.status].pill"
-              >
-                {{ statusMeta[draft.status].label }}
-              </span>
-              <span v-if="draft.baseUrl" class="truncate font-mono text-[12px] text-slate-400">
-                {{ draft.baseUrl }}
-              </span>
-            </div>
-
-            <div class="flex shrink-0 items-center gap-2">
-              <span
-                class="w-10 text-right text-[12px] text-slate-400 transition-opacity duration-150"
-                :class="showSaved ? 'opacity-100' : 'opacity-0'"
-                :aria-hidden="!showSaved"
-              >
-                已保存
-              </span>
-
-              <button
-                type="button"
-                class="press flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-lg px-3.5 text-[12.5px] text-slate-600 hover:bg-panel hover:text-slate-900 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-600"
-                :disabled="isNew || testing || saving"
-                :title="isNew ? '保存后才能测试' : undefined"
-                @click="testConnection"
-              >
-                <Loader2 v-if="testing" :size="13" class="animate-spin" />
-                {{ testing ? '测试中' : '测试连接' }}
-              </button>
-
-              <button
-                type="button"
-                class="press flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
-                :disabled="!dirty || saving"
-                @click="save"
-              >
-                <Loader2 v-if="saving" :size="13" class="animate-spin" />
-                {{ saving ? '保存中' : '保存更改' }}
-              </button>
-            </div>
-          </div>
-
-          <Transition name="notice">
-            <div
-              v-if="formError || (draft.status === 'error' && draft.testError)"
-              class="mt-4 flex items-start gap-2.5 rounded-xl bg-red-50 px-4 py-3 text-[12.5px] leading-relaxed text-red-700"
-              role="alert"
-            >
-              <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
-              <span class="min-w-0 whitespace-pre-wrap break-words">{{
-                formError || draft.testError
-              }}</span>
-            </div>
-          </Transition>
-
-          <!-- 连接 -->
-          <div class="mt-6 rounded-2xl bg-panel p-6">
-            <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-              <label class="block">
-                <span class="mb-1.5 block text-[12px] text-slate-500">名称</span>
-                <input
-                  v-model="draft.name"
-                  type="text"
-                  placeholder="DeepSeek"
-                  class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-[13.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
-                />
-              </label>
-
-              <div class="block">
-                <span class="mb-1.5 block text-[12px] text-slate-500">类型</span>
-                <SelectField
-                  :model-value="draft.type"
-                  :options="providerTypes"
-                  label="类型"
-                  @update:model-value="selectProviderType"
-                />
-                <p class="mt-1.5 text-[11px] leading-relaxed text-slate-400">
-                  本地服务选择 OpenAI 兼容，并填写本地接口地址。
-                </p>
+          <fieldset :disabled="busy" :inert="busy" class="min-w-0 border-0 p-0">
+            <div class="flex items-center justify-between gap-8">
+              <div class="flex min-w-0 items-center gap-3">
+                <h2 class="truncate text-[21px] font-semibold tracking-tight text-slate-900">
+                  {{ draft.name.trim() || '新提供商' }}
+                </h2>
+                <span
+                  class="min-w-[64px] shrink-0 rounded-full px-2.5 py-1 text-center text-[11px] transition-colors duration-200"
+                  :class="statusMeta[draft.status].pill"
+                >
+                  {{ statusMeta[draft.status].label }}
+                </span>
+                <span v-if="draft.baseUrl" class="truncate font-mono text-[12px] text-slate-400">
+                  {{ draft.baseUrl }}
+                </span>
               </div>
 
-              <label class="block">
-                <span class="mb-1.5 block text-[12px] text-slate-500">接口地址</span>
-                <input
-                  v-model="draft.baseUrl"
-                  type="text"
-                  spellcheck="false"
-                  placeholder="https://api.deepseek.com"
-                  class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
-                />
-              </label>
+              <div class="flex shrink-0 items-center gap-2">
+                <span
+                  class="w-10 text-right text-[12px] text-slate-400 transition-opacity duration-150"
+                  :class="showSaved ? 'opacity-100' : 'opacity-0'"
+                  :aria-hidden="!showSaved"
+                >
+                  已保存
+                </span>
 
-              <div>
-                <span class="mb-1.5 block text-[12px] text-slate-500">API 密钥</span>
+                <button
+                  type="button"
+                  class="press flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-lg px-3.5 text-[12.5px] text-slate-600 hover:bg-panel hover:text-slate-900 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-600"
+                  :disabled="isNew || testing || saving"
+                  :title="isNew ? '保存后才能测试' : undefined"
+                  @click="testConnection"
+                >
+                  <Loader2 v-if="testing" :size="13" class="animate-spin" />
+                  {{ testing ? '测试中' : '测试连接' }}
+                </button>
 
-                <div v-if="draft.apiKeySet && !replacingKey" class="flex items-center gap-2">
-                  <div
-                    class="flex h-10 min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3.5"
-                  >
-                    <span class="truncate font-mono text-[12px] text-slate-500">
-                      {{ draft.apiKeyPreview }}
-                    </span>
-                    <button
-                      type="button"
-                      class="shrink-0 text-[12px] font-medium text-brand-700 hover:text-brand-800"
-                      @click="startReplaceKey"
+                <button
+                  type="button"
+                  class="press flex h-9 min-w-[88px] items-center justify-center gap-1.5 rounded-lg bg-brand-300 px-4 text-[12.5px] font-medium text-brand-800 hover:bg-brand-400 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-brand-300 disabled:hover:text-brand-800"
+                  :disabled="!dirty || saving"
+                  @click="save"
+                >
+                  <Loader2 v-if="saving" :size="13" class="animate-spin" />
+                  {{ saving ? '保存中' : '保存更改' }}
+                </button>
+              </div>
+            </div>
+
+            <Transition name="notice">
+              <div
+                v-if="formError || (draft.status === 'error' && draft.testError)"
+                class="mt-4 flex items-start gap-2.5 rounded-xl bg-red-50 px-4 py-3 text-[12.5px] leading-relaxed text-red-700"
+                role="alert"
+              >
+                <AlertTriangle :size="15" class="mt-0.5 shrink-0" />
+                <span class="min-w-0 whitespace-pre-wrap break-words">{{
+                  formError || draft.testError
+                }}</span>
+              </div>
+            </Transition>
+
+            <!-- 连接 -->
+            <div class="mt-6 rounded-2xl bg-panel p-6">
+              <div class="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+                <label class="block">
+                  <span class="mb-1.5 block text-[12px] text-slate-500">显示名称</span>
+                  <input
+                    :value="draft.name"
+                    type="text"
+                    class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-[13.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                    @input="updateDisplayName"
+                  />
+                </label>
+
+                <div class="block">
+                  <span class="mb-1.5 block text-[12px] text-slate-500">类型</span>
+                  <SelectField
+                    :model-value="draft.type"
+                    :options="providerTypes"
+                    label="类型"
+                    @update:model-value="selectProviderType"
+                  />
+                </div>
+
+                <label class="block">
+                  <span class="mb-1.5 block text-[12px] text-slate-500">接口地址</span>
+                  <input
+                    v-model="draft.baseUrl"
+                    type="text"
+                    spellcheck="false"
+                    placeholder="https://api.deepseek.com"
+                    class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                  />
+                </label>
+
+                <div>
+                  <span class="mb-1.5 block text-[12px] text-slate-500">API 密钥</span>
+
+                  <div v-if="draft.apiKeySet && !replacingKey" class="flex items-center gap-2">
+                    <div
+                      class="flex h-10 min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3.5"
                     >
-                      替换
+                      <span class="truncate font-mono text-[12px] text-slate-500">
+                        {{ draft.apiKeyPreview }}
+                      </span>
+                      <button
+                        type="button"
+                        class="shrink-0 text-[12px] font-medium text-brand-700 hover:text-brand-800"
+                        @click="startReplaceKey"
+                      >
+                        替换
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-else class="flex items-center gap-2">
+                    <input
+                      v-model="pendingKey"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      :placeholder="draft.apiKeySet ? '输入新的密钥' : 'sk-...'"
+                      class="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                    />
+                    <button
+                      v-if="replacingKey"
+                      type="button"
+                      class="shrink-0 text-[12px] text-slate-500 hover:text-slate-700"
+                      @click="cancelReplaceKey"
+                    >
+                      取消
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                <div v-else class="flex items-center gap-2">
-                  <input
-                    v-model="pendingKey"
-                    type="text"
-                    autocomplete="off"
-                    spellcheck="false"
-                    :placeholder="draft.apiKeySet ? '输入新的密钥' : 'sk-...'"
-                    class="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
-                  />
+            <!-- 模型 -->
+            <div class="mt-10">
+              <div class="mb-3.5 flex items-center justify-between">
+                <h3 class="text-[14px] font-medium text-slate-800">
+                  模型
+                  <span class="ml-1 text-[12px] font-normal text-slate-400">{{
+                    draft.models.length
+                  }}</span>
+                </h3>
+
+                <div class="flex items-center gap-4">
                   <button
-                    v-if="replacingKey"
                     type="button"
-                    class="shrink-0 text-[12px] text-slate-500 hover:text-slate-700"
-                    @click="cancelReplaceKey"
+                    class="flex items-center gap-1.5 text-[12px] text-slate-500 transition-colors hover:text-brand-700 disabled:cursor-default disabled:opacity-40 disabled:hover:text-slate-500"
+                    :disabled="isNew || pullLoading"
+                    :title="isNew ? '保存后才能拉取模型' : undefined"
+                    @click="openPull"
                   >
-                    取消
+                    <Loader2 v-if="pullLoading" :size="12" class="animate-spin" />
+                    <RefreshCw v-else :size="12" :stroke-width="2.4" />
+                    拉取模型
+                  </button>
+                  <button
+                    type="button"
+                    class="flex items-center gap-1.5 text-[12px] text-slate-500 transition-colors hover:text-brand-700"
+                    @click="addModel"
+                  >
+                    <Plus :size="12" :stroke-width="2.4" />
+                    添加模型
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <!-- 模型 -->
-          <div class="mt-10">
-            <div class="mb-3.5 flex items-center justify-between">
-              <h3 class="text-[14px] font-medium text-slate-800">
-                模型
-                <span class="ml-1 text-[12px] font-normal text-slate-400">{{
-                  draft.models.length
-                }}</span>
-              </h3>
-
-              <div class="flex items-center gap-4">
-                <button
-                  type="button"
-                  class="flex items-center gap-1.5 text-[12px] text-slate-500 transition-colors hover:text-brand-700 disabled:cursor-default disabled:opacity-40 disabled:hover:text-slate-500"
-                  :disabled="isNew || pullLoading"
-                  :title="isNew ? '保存后才能拉取模型' : undefined"
-                  @click="openPull"
-                >
-                  <Loader2 v-if="pullLoading" :size="12" class="animate-spin" />
-                  <RefreshCw v-else :size="12" :stroke-width="2.4" />
-                  拉取模型
-                </button>
-                <button
-                  type="button"
-                  class="flex items-center gap-1.5 text-[12px] text-slate-500 transition-colors hover:text-brand-700"
-                  @click="addModel"
-                >
-                  <Plus :size="12" :stroke-width="2.4" />
-                  添加模型
-                </button>
-              </div>
-            </div>
-
-            <div
-              v-if="draft.models.length"
-              class="divide-y divide-hairline overflow-hidden rounded-2xl bg-panel px-6"
-            >
               <div
-                v-for="model in draft.models"
-                :key="model.uid"
-                :data-model-uid="model.uid"
-                class="grid transition-[grid-template-rows] duration-200 ease-out"
-                :class="removing.includes(model.uid) ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'"
+                v-if="draft.models.length"
+                class="divide-y divide-hairline overflow-hidden rounded-2xl bg-panel px-6"
               >
-                <!--
+                <div
+                  v-for="model in draft.models"
+                  :key="model.uid"
+                  :data-model-uid="model.uid"
+                  class="grid transition-[grid-template-rows] duration-200 ease-out"
+                  :class="removing.includes(model.uid) ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'"
+                >
+                  <!--
                   折叠加 -mx/px 把裁切框左右各撑开 6px：输入框的 focus 光圈有 4px，
                   正好压在裁切边上会被切掉右侧那一半。
                 -->
-                <div class="-mx-1.5 overflow-hidden px-1.5">
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-3 py-4 text-left"
-                    :aria-expanded="isExpanded(model.uid)"
-                    @click="toggleModel(model.uid)"
-                  >
-                    <p
-                      class="font-mono text-[13.5px]"
-                      :class="model.id ? 'text-slate-900' : 'text-slate-400'"
+                  <div class="-mx-1.5 overflow-hidden px-1.5">
+                    <button
+                      type="button"
+                      class="flex w-full items-center gap-3 py-4 text-left"
+                      :aria-expanded="isExpanded(model.uid)"
+                      @click="toggleModel(model.uid)"
                     >
-                      {{ model.id || '未命名模型' }}
-                    </p>
-                    <p v-if="model.displayName" class="truncate text-[12px] text-slate-400">
-                      {{ model.displayName }}
-                    </p>
-
-                    <div class="ml-auto flex shrink-0 items-center gap-1.5">
-                      <span
-                        v-if="model.contextLength > 0"
-                        class="rounded bg-white px-2 py-1 text-[10.5px] text-slate-500"
+                      <p
+                        class="font-mono text-[13.5px]"
+                        :class="model.id ? 'text-slate-900' : 'text-slate-400'"
                       >
-                        {{ formatContext(Number(model.contextLength)) }} 上下文
-                      </span>
-                      <span
-                        v-if="model.supportsImage"
-                        class="rounded bg-white px-2 py-1 text-[10.5px] text-slate-500"
-                      >
-                        图片
-                      </span>
-                    </div>
+                        {{ model.id || '未命名模型' }}
+                      </p>
+                      <p v-if="model.displayName" class="truncate text-[12px] text-slate-400">
+                        {{ model.displayName }}
+                      </p>
 
-                    <ChevronDown
-                      :size="15"
-                      class="shrink-0 text-slate-400 transition-transform duration-200"
-                      :class="isExpanded(model.uid) ? 'rotate-180' : ''"
-                    />
-                  </button>
+                      <div class="ml-auto flex shrink-0 items-center gap-1.5">
+                        <span
+                          v-if="model.contextLength > 0"
+                          class="rounded bg-white px-2 py-1 text-[10.5px] text-slate-500"
+                        >
+                          {{ formatContext(Number(model.contextLength)) }} 上下文
+                        </span>
+                        <span
+                          v-if="model.supportsImage"
+                          class="rounded bg-white px-2 py-1 text-[10.5px] text-slate-500"
+                        >
+                          图片
+                        </span>
+                      </div>
 
-                  <div
-                    class="grid transition-[grid-template-rows] duration-200 ease-out"
-                    :class="isExpanded(model.uid) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
-                  >
-                    <div class="-mx-1.5 overflow-hidden px-1.5">
-                      <div
-                        class="grid grid-cols-1 gap-5 border-t border-hairline pb-4 pt-5 transition-opacity duration-200 md:grid-cols-3"
-                        :class="isExpanded(model.uid) ? 'opacity-100' : 'opacity-0'"
-                        :inert="!isExpanded(model.uid)"
-                      >
-                        <label class="block">
-                          <span class="mb-1.5 block text-[12px] text-slate-500">模型 ID</span>
-                          <input
-                            v-model="model.id"
-                            type="text"
-                            spellcheck="false"
-                            placeholder="deepseek-chat"
-                            class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
-                          />
-                        </label>
+                      <ChevronDown
+                        :size="15"
+                        class="shrink-0 text-slate-400 transition-transform duration-200"
+                        :class="isExpanded(model.uid) ? 'rotate-180' : ''"
+                      />
+                    </button>
 
-                        <label class="block">
-                          <span class="mb-1.5 block text-[12px] text-slate-500">显示名称</span>
-                          <input
-                            v-model="model.displayName"
-                            type="text"
-                            placeholder="可选"
-                            class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-[13.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
-                          />
-                        </label>
-
-                        <label class="block">
-                          <span class="mb-1.5 block text-[12px] text-slate-500">上下文长度</span>
-                          <span class="relative block">
+                    <div
+                      class="grid transition-[grid-template-rows] duration-200 ease-out"
+                      :class="isExpanded(model.uid) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
+                    >
+                      <div class="-mx-1.5 overflow-hidden px-1.5">
+                        <div
+                          class="grid grid-cols-1 gap-5 border-t border-hairline pb-4 pt-5 transition-opacity duration-200 md:grid-cols-3"
+                          :class="isExpanded(model.uid) ? 'opacity-100' : 'opacity-0'"
+                          :inert="!isExpanded(model.uid)"
+                        >
+                          <label class="block">
+                            <span class="mb-1.5 block text-[12px] text-slate-500">模型 ID</span>
                             <input
-                              :value="model.contextLength > 0 ? model.contextLength : ''"
+                              v-model="model.id"
                               type="text"
-                              inputmode="numeric"
-                              autocomplete="off"
-                              maxlength="9"
-                              class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 pr-16 text-[13.5px] tabular-nums text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
-                              @input="updateContext(model, $event)"
+                              spellcheck="false"
+                              placeholder="deepseek-chat"
+                              class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
                             />
-                            <span
-                              class="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400"
-                            >
-                              tokens
-                            </span>
-                          </span>
-                        </label>
+                          </label>
 
-                        <div class="block">
-                          <span class="mb-1.5 block text-[12px] text-slate-500">图片输入</span>
-                          <div class="flex h-10 items-center">
+                          <label class="block">
+                            <span class="mb-1.5 block text-[12px] text-slate-500">显示名称</span>
+                            <input
+                              v-model="model.displayName"
+                              type="text"
+                              placeholder="可选"
+                              class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-[13.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                            />
+                          </label>
+
+                          <label class="block">
+                            <span class="mb-1.5 block text-[12px] text-slate-500">上下文长度</span>
+                            <span class="relative block">
+                              <input
+                                :value="model.contextLength > 0 ? model.contextLength : ''"
+                                type="text"
+                                inputmode="numeric"
+                                autocomplete="off"
+                                maxlength="9"
+                                class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 pr-16 text-[13.5px] tabular-nums text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                                @input="updateContext(model, $event)"
+                              />
+                              <span
+                                class="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400"
+                              >
+                                tokens
+                              </span>
+                            </span>
+                          </label>
+
+                          <div class="block">
+                            <span class="mb-1.5 block text-[12px] text-slate-500">图片输入</span>
+                            <div class="flex h-10 items-center">
+                              <button
+                                type="button"
+                                role="switch"
+                                :aria-checked="model.supportsImage"
+                                class="relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+                                :class="model.supportsImage ? 'bg-brand-300' : 'bg-slate-200'"
+                                @click="toggleImage(model)"
+                              >
+                                <span
+                                  class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200"
+                                  :style="{
+                                    transform: model.supportsImage
+                                      ? 'translateX(16px)'
+                                      : 'translateX(0)',
+                                  }"
+                                ></span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <label class="block">
+                            <span class="mb-1.5 block text-[12px] text-slate-500">思考强度</span>
+                            <input
+                              v-model="model.reasoningEffortsText"
+                              type="text"
+                              spellcheck="false"
+                              placeholder="low, high, max"
+                              class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
+                            />
+                            <span class="mt-1.5 block text-[11px] leading-relaxed text-slate-400">
+                              用逗号分隔接口支持的强度，留空表示不支持思考。
+                            </span>
+                          </label>
+
+                          <div class="flex items-end justify-end">
                             <button
                               type="button"
-                              role="switch"
-                              :aria-checked="model.supportsImage"
-                              class="relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-                              :class="model.supportsImage ? 'bg-brand-300' : 'bg-slate-200'"
-                              @click="toggleImage(model)"
+                              class="pb-2.5 text-[12px] text-red-500 transition-colors hover:text-red-600"
+                              @click="removeModel(model.uid)"
                             >
-                              <span
-                                class="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200"
-                                :style="{
-                                  transform:
-                                    model.supportsImage ? 'translateX(16px)' : 'translateX(0)',
-                                }"
-                              ></span>
+                              删除模型
                             </button>
                           </div>
-                        </div>
-
-                        <label class="block">
-                          <span class="mb-1.5 block text-[12px] text-slate-500">思考强度</span>
-                          <input
-                            v-model="model.reasoningEffortsText"
-                            type="text"
-                            spellcheck="false"
-                            placeholder="low, high, max"
-                            class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 font-mono text-[12.5px] text-slate-800 outline-none transition duration-150 focus:border-brand-400 focus:ring-4 focus:ring-brand-300/25"
-                          />
-                          <span class="mt-1.5 block text-[11px] leading-relaxed text-slate-400">
-                            用逗号分隔接口支持的强度，留空表示不支持思考。
-                          </span>
-                        </label>
-
-                        <div class="flex items-end justify-end">
-                          <button
-                            type="button"
-                            class="pb-2.5 text-[12px] text-red-500 transition-colors hover:text-red-600"
-                            @click="removeModel(model.uid)"
-                          >
-                            删除模型
-                          </button>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+
+              <div
+                v-else
+                class="rounded-2xl bg-panel px-6 py-12 text-center text-[13px] text-slate-400"
+              >
+                还没有模型，可以从提供商拉取或手动添加
+              </div>
             </div>
 
-            <div
-              v-else
-              class="rounded-2xl bg-panel px-6 py-12 text-center text-[13px] text-slate-400"
-            >
-              还没有模型，可以从提供商拉取或手动添加
+            <div v-if="!isNew" class="mt-10 flex justify-end">
+              <button
+                type="button"
+                class="text-[12px] text-red-500 transition-colors hover:text-red-600"
+                @click="deleteProvider"
+              >
+                删除提供商
+              </button>
             </div>
-          </div>
-
-          <div v-if="!isNew" class="mt-10 flex justify-end">
-            <button
-              type="button"
-              class="text-[12px] text-red-500 transition-colors hover:text-red-600"
-              @click="deleteProvider"
-            >
-              删除提供商
-            </button>
-          </div>
+          </fieldset>
         </section>
       </Transition>
     </template>
@@ -1193,6 +1301,13 @@ onBeforeUnmount(() => {
         添加提供商
       </button>
     </div>
+
+    <ProviderPicker
+      :open="pickerOpen"
+      :disabled="selectingPreset"
+      @close="pickerOpen = false"
+      @select="selectPreset"
+    />
 
     <!-- 拉取模型 -->
     <Teleport to="body">

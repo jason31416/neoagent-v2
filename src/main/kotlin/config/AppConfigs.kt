@@ -4,7 +4,7 @@ import cn.jason31416.framework.ChannelConfig
 import cn.jason31416.framework.Config
 import cn.jason31416.framework.ConfigSection
 
-object SystemConfig : Config("system", "config/system.yml") {
+object SystemConfig : Config("config/system.yml") {
     object panel : ConfigSection("panel", "面板", SystemConfig) {
         val panelTitle = text("panelTitle", "面板标题", default = "NeoAgent WebUI")
         val language = select(

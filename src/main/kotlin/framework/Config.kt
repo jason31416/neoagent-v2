@@ -195,7 +195,7 @@ open class ConfigSection(
 
     fun text(
         key: String,
-        label: String,
+        label: String = key.capitalize(),
         default: String = "",
         help: String? = null,
         required: Boolean = false,
@@ -381,8 +381,7 @@ open class ConfigSection(
 }
 
 abstract class Config(
-    val id: String,
-    val path: String = "$id.yml",
+    val path: String,
 ) {
     abstract val sections: List<ConfigSection>
 
@@ -411,12 +410,12 @@ abstract class Config(
     fun validate() {
         val sectionIds = sections.map { it.id }
         require(sectionIds.size == sectionIds.toSet().size) {
-            "Duplicate config section id in config '$id'"
+            "Duplicate config section id in config '$path'"
         }
 
         val keys = sections.flatMap { it.fieldList }.map { it.key }
         require(keys.size == keys.toSet().size) {
-            "Duplicate config key in config '$id'"
+            "Duplicate config key in config '$path'"
         }
     }
 }
@@ -426,9 +425,9 @@ abstract class Config(
 // todo: channel config应该不能reuse 现有的config相关内容，或者需要较大调整
 // 主要考虑：如何动态从配置中加载不同类型的channel config?
 abstract class ChannelConfig(
-    id: String,
+    val id: String,
     val name: String,
-) : Config(id, "channels/$id") {
+) : Config("channels/$id") {
     var enabled: Boolean
         get() = (ConfigManager.read(path, ConfigManager.ROOT_SECTION, "enabled") as? Boolean)
             ?: false

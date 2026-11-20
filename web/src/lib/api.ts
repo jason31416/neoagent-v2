@@ -70,6 +70,8 @@ export interface ModelProvider {
 }
 
 export interface ProviderInput {
+  /** 仅创建时使用；编辑时省略，ID 以 URL 为准。 */
+  id?: string
   name: string
   type: string
   baseUrl: string

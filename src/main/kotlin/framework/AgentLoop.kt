@@ -12,6 +12,8 @@ import kotlinx.serialization.json.*
 import java.io.File
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
+import java.util.Queue
+import java.util.concurrent.ConcurrentLinkedQueue
 
 sealed interface AgentEvent {
     /** 流式文本，临时的；UI 可以边收边显示 */
@@ -136,7 +138,7 @@ val defaultCompactPrompt: String = """
  * Everything that can block is a suspend call, so cancellation just works.
  */
 class AgentLoop(
-    private var model: Model,
+    public var model: ()->Model,
     public val context: Context,
     private val tools: Map<String, Tool> = hashMapOf(),
     private val maxTurns: Int = 96,
@@ -147,6 +149,9 @@ class AgentLoop(
     public var currentSessionID: String = UUID.randomUUID().toString();
     private var lastContextUsage: Int? = null;
     private val inbox = Channel<Message>(Channel.UNLIMITED);
+    private var queuedMessages = ConcurrentLinkedQueue<Message>()
+
+    fun queueMessage(msg: Message) = queuedMessages.add(msg)
 
     fun send(msg: Message): Boolean = inbox.trySend(msg).isSuccess
 
@@ -191,7 +196,7 @@ class AgentLoop(
         toCompact.add(
             ContextEntry(Role.USER, mutableListOf(ContentBlock(ContentType.TEXT, compactPrompt)))
         )
-        val ret = model.request(
+        val ret = model().request(
             toCompact,
             listOf(),
             effort,
@@ -250,11 +255,15 @@ class AgentLoop(
         }
     }
 
+    @Volatile
+    private var phase = Phase.IDLE
+
+    fun isRunning(): Boolean = phase!=Phase.IDLE
+
     /**
      * The core lifetime worker of the agent
      */
     val worker = coroutineScope.launch {
-        var phase = Phase.IDLE
         var turns = 0
         var pendingToolCalls = arrayListOf<ToolCall>()
 
@@ -264,6 +273,12 @@ class AgentLoop(
                     Phase.IDLE -> {
                         val msg = inbox.receiveCatching();
                         if(msg.getOrNull()==null) break
+
+                        while (true) {
+                            val msg = queuedMessages.poll() ?: break
+                            appendMessage(msg)
+                        }
+
                         appendMessage(msg.getOrThrow())
                         while (true) {
                             val next = inbox.tryReceive().getOrNull() ?: break
@@ -282,7 +297,8 @@ class AgentLoop(
                             continue
                         }
 
-                        if(lastContextUsage!=null && lastContextUsage!!>model.capabilities.contextLength * 0.9){
+                        val m = model()
+                        if(lastContextUsage!=null && lastContextUsage!!>m.capabilities.contextLength * 0.9){
                             compactSession()
                         }
 
@@ -291,7 +307,8 @@ class AgentLoop(
                         val currentReasoning: StringBuilder = StringBuilder()
 
                         val request = async {
-                            model.request(context.getActiveContext(), tools.values.map { it.meta }, effort, currentSessionID)
+                            val prompt = context.getActiveContext()
+                            m.request(prompt, tools.values.map { it.meta }, effort, currentSessionID)
                                 .onEach { e ->
                                     if (e is ModelEvent.TextDelta){
                                         if(e.textDelta!=null) {

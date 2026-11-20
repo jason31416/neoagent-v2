@@ -126,24 +126,13 @@ object ToolRegistry {
     fun allTools() = tools
 }
 
-@Description("A tool designed for testing. Calculates a+b. Will throw when b is 0 for testing.")
-internal fun addition_tool(
-    @Description("The first number, must be an integer.") a: Int,
-    @Description("The second number, must not be 0.") b: Double,
-): List<ContentBlock> {
-    require(b != 0.0) {
-        "This is a testing throw message"
-    }
-    return listOf(ContentBlock(ContentType.TEXT, "<result>The result of the call is " + (a + b) + "</result>"))
-}
-
 @Description(
     "Read anything from disk. png/jpg/jpeg/gif/webp are returned as images; " +
             "everything else is returned as UTF-8 text." +
             "When reading a directory, this tool will list the file names in it."
 )
 fun read(
-    @Description("Absolute path of the file/directory to read.") path: String,
+    @Description("Path of the file/directory to read.") path: String,
 ): List<ContentBlock> {
     val file = File(path)
     if(file.isDirectory){
@@ -175,6 +164,5 @@ fun read(
 }
 
 fun registerTestingTools() {
-    ToolRegistry.registerTool(::addition_tool)
     ToolRegistry.registerTool(::read)
 }

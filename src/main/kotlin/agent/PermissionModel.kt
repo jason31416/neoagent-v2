@@ -1,7 +1,6 @@
 package cn.jason31416.agent
 
 import cn.jason31416.channel.IMUser
-import cn.jason31416.channel.getKey
 import cn.jason31416.database.db
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.Table
