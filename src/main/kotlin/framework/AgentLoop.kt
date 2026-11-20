@@ -140,7 +140,7 @@ val defaultCompactPrompt: String = """
 class AgentLoop(
     public var model: ()->Model,
     public val context: Context,
-    private val tools: Map<String, Tool> = hashMapOf(),
+    private val tools: () -> Map<String, Tool> = {hashMapOf()},
     private val maxTurns: Int = 96,
     private val coroutineScope: CoroutineScope,
     private val compactPrompt: String = defaultCompactPrompt
@@ -308,7 +308,7 @@ class AgentLoop(
 
                         val request = async {
                             val prompt = context.getActiveContext()
-                            m.request(prompt, tools.values.map { it.meta }, effort, currentSessionID)
+                            m.request(prompt, tools().values.map { it.meta }, effort, currentSessionID)
                                 .onEach { e ->
                                     if (e is ModelEvent.TextDelta){
                                         if(e.textDelta!=null) {
@@ -439,7 +439,7 @@ class AgentLoop(
             ?: error("model stream ended without a Completed event")
 
     private suspend fun execute(call: ToolCall): ContextEntry {
-        val tool = tools[call.name]
+        val tool = tools()[call.name]
             ?: return call.reply("<error>Unknown tool: ${call.name}</error>")
 
         val args = runCatching { Json.parseToJsonElement(call.arguments).jsonObject }

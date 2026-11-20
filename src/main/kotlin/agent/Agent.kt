@@ -6,6 +6,9 @@ import cn.jason31416.database.db
 import cn.jason31416.framework.*
 import cn.jason31416.providers.ModelProviderManager
 import com.charleskorn.kaml.Yaml
+import io.ktor.utils.io.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.ResultRow
@@ -157,6 +160,11 @@ class Agent(
     val id: String,
     @Volatile var agentConfig: AgentConfig
 ){
+    init {
+        if(agents.containsKey(id)) {
+            throw IllegalArgumentException("Agent with id $id already exists")
+        }
+    }
     companion object {
         val agents = ConcurrentHashMap<String, Agent>()
 
@@ -171,6 +179,7 @@ class Agent(
             if (!agentConfigDir.exists()) {
                 agentConfigDir.mkdirs()
             }
+
             for(i in agentConfigDir.listFiles()!!) {
                 if(i.isFile && i.extension == "yml") {
                     val config = try {
@@ -213,30 +222,57 @@ class Agent(
         }
     }
 
-    init {
-        if(agents.containsKey(id)) throw IllegalArgumentException("Agent with id $id already exists")
-
-        agents[id] = this
-
-        //todo: send agent's message to chat. To currentChannel or by default the first channel in the boundInterfaces
-    }
-
     // The interfaces (IMChat or Channel) that the agent handle.
 
     val context = AgentContext({"TODO"}, id)
     val agentLoop = AgentLoop(
         model = { ModelProviderManager.getModel(agentConfig.model)?: error("Agent $id: model '${agentConfig.model}' not found") },
         context = context,
-        coroutineScope = NeoagentRuntime.coroutineScope
+        coroutineScope = NeoagentRuntime.coroutineScope,
+        tools = {
+            ToolRegistry.tools.filter {it.key in agentConfig.allowedTools}
+        }
     )
 
-    var currentChannel: Channel? = null
+    val replyWorker = NeoagentRuntime.coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+        agentLoop.events.collect { event ->
+            when(event){
+                is AgentEvent.AssistantReplied -> {
+                    // this is mostly redundant because usually agent only reply with one text component.
+                    val str = event.message.content.map { if(it.type == ContentType.TEXT) it.content else "" }.joinToString("\n")
+                    if(str.trim().isEmpty() || str.trim() == "<empty>") return@collect
+
+                    if(currentChat == null){
+                        // todo: set a `home chat` for this message to go maybe?
+                        error("Agent without any channel configured is trying to send a message!")
+                        return@collect
+                    }
+
+                    try {
+                        // todo: Make this split configurable.
+                        str.split("\n\n").forEach { currentChat!!.sendMessage(IMMessageContent().text(it)) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        System.err.println("Agent $id message failed to send: ${e.message}")
+                    }
+                }
+                else -> {}
+            }
+        }
+    }
+
+    init {
+        agents[id] = this
+    }
+
+    @Volatile
+    var currentChat: IMChat? = null
 
     fun handleMessage(message: IMMessage) {
         var mentioned = false
 
         val content = mutableListOf<String>()
-        currentChannel = message.channel
 
         message.content.forEachComponent {
             when(it) {
@@ -272,7 +308,8 @@ class Agent(
         )
 
         if(mentioned || agentConfig.boundInterfaces[message.chat.getInterfaceID()]?.handleMode == AgentHandleMode.ALWAYS) {
-            agentLoop.send(msg)
+            agentLoop.send(msg) // This immediately triggers a round.
+            currentChat = message.chat
         }else{
             agentLoop.queueMessage(msg)
         }
@@ -281,6 +318,7 @@ class Agent(
     fun deactivate(){
         agents.remove(id)
         agentLoop.worker.cancel()
+        replyWorker.cancel()
         //todo: when shut down: tool call-respond pair might break
     }
 }

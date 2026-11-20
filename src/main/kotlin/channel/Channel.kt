@@ -158,6 +158,8 @@ class Channel(val id: String,
     override fun getInterfaceID(): String = "channel-$id"
 
     companion object {
+        val channels = listOf<Channel>()
+
         fun constructChannelFromConfig(config: ChannelConfig) = Channel(
             config.id,
             config,
